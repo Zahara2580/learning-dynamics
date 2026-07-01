@@ -106,12 +106,10 @@ def download_flores(output_dir: str, cache_dir: str | None = None) -> None:
 
     splits = {}
     for split in FLORES_SPLITS:
-        src_col = f"sentence_{FLORES_SOURCE_LANG}"
-        tgt_col = f"sentence_{FLORES_TARGET_LANG}"
         splits[split] = Dataset.from_dict({
             "id": source[split]["id"],
-            "source": source[split][src_col],
-            "target": target[split][tgt_col],
+            "source": source[split]["sentence"],
+            "target": target[split]["sentence"],
         })
         logger.info(f"[mt] {split}: {len(splits[split]):,} sentence pairs")
 
