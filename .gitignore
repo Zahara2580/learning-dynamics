@@ -13,7 +13,7 @@ __pycache__/
 .DS_Store
 
 # Data & model artifacts (these belong in $SCRATCH on the HPC, not git)
-data/
+/data/
 checkpoints/
 *.bin
 *.safetensors
