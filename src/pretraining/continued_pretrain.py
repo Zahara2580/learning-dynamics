@@ -64,8 +64,13 @@ def parse_args() -> Namespace:
     parser.add_argument("--model-config", type=str, required=True)
     parser.add_argument("--input", type=str, required=True, help="Path to preprocessed WURA chunks.")
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint, if one exists.")
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help="Override the number of real training steps run. Useful for quick smoke tests, e.g. --max-steps 10.",
+    )
     return parser.parse_args()
-
 
 def main() -> None:
     args = parse_args()
@@ -104,12 +109,14 @@ def main() -> None:
     resume_from = None
     if args.resume:
         resume_from = find_latest_checkpoint(config.output_dir)
+# --max-steps overrides how many steps actually run (for quick tests)
+    actual_max_steps = args.max_steps if args.max_steps is not None else config.total_steps
 
     training_args = Seq2SeqTrainingArguments(
         output_dir=config.output_dir,
         learning_rate=config.learning_rate,
         per_device_train_batch_size=config.batch_size,
-        max_steps=config.total_steps,
+        max_steps=actual_max_steps,              # <--- USE THE VARIABLE HERE
         warmup_steps=config.warmup_steps,
         save_strategy="no",
         logging_steps=10,
