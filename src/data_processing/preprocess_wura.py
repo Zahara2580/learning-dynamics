@@ -18,7 +18,14 @@ from pathlib import Path
 from datasets import Dataset, load_from_disk
 from transformers import AutoTokenizer, PreTrainedTokenizerBase, logging as hf_logging
 
+from src.pretraining.collator import compute_input_and_target_lengths
 from src.pretraining.config import ModelConfig
+
+# T5's standard span-corruption hyperparameters. These must match the
+# values used by DataCollatorForT5MLM at training time, since they
+# determine what chunk length preprocessing needs to produce.
+NOISE_DENSITY = 0.15
+MEAN_NOISE_SPAN_LENGTH = 3.0
 
 # Configure logging to show timestamps and log level
 logging.basicConfig(
@@ -88,7 +95,7 @@ def tokenize_and_chunk(
 
     :param dataset: HuggingFace Dataset with "headline" and "content" columns.
     :param tokenizer: Tokenizer matching the model being pretrained.
-    :param block_size: Fixed chunk length (max_seq_length from the model config).
+    :param block_size: Fixed chunk length (expanded_length, pre-corruption).
     :param num_proc: Number of processes used for preprocessing.
     :return: Dataset of fixed-length token id chunks.
     """
@@ -152,6 +159,19 @@ def main() -> None:
     config = ModelConfig.from_yaml(args.model_config)
     logger.info(f"Loaded config for {config.model_name_or_path} (max_seq_length={config.max_seq_length})")
 
+    # Chunks need to be longer than max_seq_length before corruption,
+    # since span corruption replaces multi-token spans with a single
+    # sentinel token, shrinking the sequence. expanded_length is the
+    # pre-corruption length that compresses down to exactly
+    # max_seq_length after the collator applies corruption at training
+    # time - see src/pretraining/collator.py for the corruption logic.
+    expanded_length, _ = compute_input_and_target_lengths(
+        input_length=config.max_seq_length,
+        noise_density=NOISE_DENSITY,
+        mean_noise_span_length=MEAN_NOISE_SPAN_LENGTH,
+    )
+    logger.info(f"Chunking to expanded_length={expanded_length} (post-corruption target: {config.max_seq_length})")
+
     # Initialise the model's tokenizer. AutoTokenizer works identically
     # here whether the underlying model is T5 (subword), ByT5, or
     # Nguni-ByT5 (both byte-level) - no branching needed.
@@ -165,7 +185,7 @@ def main() -> None:
     chunked_corpus = tokenize_and_chunk(
         dataset=corpus,
         tokenizer=tokenizer,
-        block_size=config.max_seq_length,
+        block_size=expanded_length,
         num_proc=args.nproc
     )
 
