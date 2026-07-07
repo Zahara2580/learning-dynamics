@@ -1,5 +1,7 @@
 """
-Storage-checking utility for the UCT HPC's `myquota` command.
+Storage-checking utility for the UCT HPC's `myquota` command (an alias
+for the actual /scratch/slurm/bin/purequota executable - subprocess
+calls bypass shell aliases entirely, so the real path is used directly).
 
 Used before saving a checkpoint during CPT, to fail cleanly (raise an
 error, let the job stop) rather than crash mid-write if there isn't
@@ -17,20 +19,24 @@ logger = logging.getLogger(__name__)
 # after saving, even if the checkpoint would technically just fit.
 SAFETY_MARGIN_GB = 2.0
 
+# Real path to the quota-checking executable. `myquota` is a shell
+# alias for this, and aliases aren't visible to subprocess calls.
+PUREQUOTA_PATH = "/scratch/slurm/bin/purequota"
+
 
 def get_scratch_available_gb() -> float:
     """
-    Query the HPC's `myquota` command and parse out available scratch space.
+    Query the HPC's quota tool and parse out available scratch space.
 
     :return: Available scratch space in GB.
-    :raises RuntimeError: If myquota cannot be run or its output cannot be parsed.
+    :raises RuntimeError: If the quota tool cannot be run or its output cannot be parsed.
     """
     try:
         result = subprocess.run(
-            ["myquota"], capture_output=True, text=True, timeout=30, check=True
+            [PUREQUOTA_PATH], capture_output=True, text=True, timeout=30, check=True
         )
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
-        raise RuntimeError(f"Could not run myquota to check scratch space: {e}")
+        raise RuntimeError(f"Could not run {PUREQUOTA_PATH} to check scratch space: {e}")
 
     # Expected line format: "/scratch         50GB      29GB   58.0%"
     match = re.search(r"/scratch\s+(\d+(?:\.\d+)?)GB\s+(\d+(?:\.\d+)?)GB", result.stdout)
