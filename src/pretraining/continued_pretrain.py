@@ -64,11 +64,22 @@ def parse_args() -> Namespace:
     parser.add_argument("--model-config", type=str, required=True)
     parser.add_argument("--input", type=str, required=True, help="Path to preprocessed WURA chunks.")
     parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint, if one exists.")
+    parser.add_argument("--max-steps", type=int, default=None)
     parser.add_argument(
-        "--max-steps",
+        "--batch-size",
         type=int,
         default=None,
-        help="Override the number of real training steps run. Useful for quick smoke tests, e.g. --max-steps 10.",
+        help="Override the per-device batch size from the config. The config's "
+             "batch_size (1024) was tuned for base-sized models and is too large "
+             "for large-sized models to fit in GPU memory directly.",
+    )
+    parser.add_argument(
+        "--gradient-accumulation-steps",
+        type=int,
+        default=1,
+        help="Accumulate gradients over N steps before updating weights, to "
+             "simulate a larger effective batch size without needing it all in "
+             "memory at once. effective_batch_size = batch_size * this value.",
     )
     return parser.parse_args()
 
@@ -77,7 +88,13 @@ def main() -> None:
 
     config = ModelConfig.from_yaml(args.model_config)
     logger.info(f"Model: {config.model_name_or_path}")
-
+    batch_size = args.batch_size if args.batch_size is not None else config.batch_size
+    effective_batch_size = batch_size * args.gradient_accumulation_steps
+    logger.info(
+        f"Per-device batch size: {batch_size}, "
+        f"gradient accumulation steps: {args.gradient_accumulation_steps}, "
+        f"effective batch size: {effective_batch_size}"
+    )
     tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
     model = AutoModelForSeq2SeqLM.from_pretrained(
         config.model_name_or_path,
@@ -115,8 +132,10 @@ def main() -> None:
     training_args = Seq2SeqTrainingArguments(
         output_dir=config.output_dir,
         learning_rate=config.learning_rate,
-        per_device_train_batch_size=config.batch_size,
-        max_steps=actual_max_steps,              # <--- USE THE VARIABLE HERE
+        per_device_train_batch_size=batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        optim="adafactor",
+        max_steps=actual_max_steps,
         warmup_steps=config.warmup_steps,
         save_strategy="no",
         logging_steps=10,

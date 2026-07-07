@@ -31,7 +31,6 @@ module load python/miniconda3-py3.12
 cd /scratch/rmdrak003/learning-dynamics
 uv sync --frozen
 
-# Run continued pretraining (CPT) - smoke test, 10 steps only
 uv run accelerate launch \
     --num_processes ${SLURM_GPUS_ON_NODE:-1} \
     --mixed_precision bf16 \
@@ -39,4 +38,6 @@ uv run accelerate launch \
     --module src.pretraining.continued_pretrain \
     --model-config configs/models/t5.yaml \
     --input /scratch/rmdrak003/data/preprocessed/t5 \
-    --max-steps 10
+    --max-steps 10 \
+    --batch-size 8 \
+    --gradient-accumulation-steps 128
