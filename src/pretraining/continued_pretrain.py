@@ -16,7 +16,7 @@ Usage:
 import argparse
 import logging
 from argparse import Namespace
-
+import torch
 from datasets import load_from_disk
 from transformers import (
     AutoModelForSeq2SeqLM,
@@ -74,7 +74,10 @@ def main() -> None:
     logger.info(f"Model: {config.model_name_or_path}")
 
     tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
-    model = AutoModelForSeq2SeqLM.from_pretrained(config.model_name_or_path)
+    model = AutoModelForSeq2SeqLM.from_pretrained(
+        config.model_name_or_path,
+        torch_dtype=torch.bfloat16,
+    )
 
     logger.info(f"Loading preprocessed chunks from {args.input}...")
     dataset = load_from_disk(args.input)
