@@ -88,7 +88,7 @@ def main() -> None:
     """Standalone entry point for sanity-checking the checkpoint schedule."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-    # Sanity check for encoder-decoder models (10k steps, per the proposal)
+    # Sanity check for encoder-decoder models (10k steps)
     steps = compute_checkpoint_steps(total_steps=10_000)
     log_checkpoint_schedule(10_000, steps)
 
