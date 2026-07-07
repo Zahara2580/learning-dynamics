@@ -4,14 +4,13 @@ max_seq_length: 512
 
 # Training Configuration
 learning_rate: 1.0e-4
-batch_size: 1024
+per_device_batch_size: 8
+gradient_accumulation_steps: 128
 total_steps: 10000
 warmup_steps: 5000
 
 # Checkpointing Configuration
 output_dir: "/scratch/rmdrak003/results/t5"
-checkpoint_schedule:
-  save_initial_checkpoint: true
 
 # Experiment Tracking
 wandb_project: "cpt-learning-dynamics"

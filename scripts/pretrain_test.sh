@@ -38,6 +38,4 @@ uv run accelerate launch \
     --module src.pretraining.continued_pretrain \
     --model-config configs/models/t5.yaml \
     --input /scratch/rmdrak003/data/preprocessed/t5 \
-    --max-steps 10 \
-    --batch-size 8 \
-    --gradient-accumulation-steps 128
+    --max-steps 10

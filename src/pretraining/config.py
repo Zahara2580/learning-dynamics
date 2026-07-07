@@ -17,7 +17,9 @@ class ModelConfig:
         max_seq_length: Fixed chunk length used for preprocessing and
             training (this is the block size preprocess.py chunks to).
         learning_rate: Pretraining learning rate.
-        batch_size: Per-device batch size.
+        per_device_batch_size: Per-device batch size.
+        gradient_accumulation_steps: Number of steps to accumulate
+            gradients over before updating weights.
         total_steps: Total number of training steps.
         warmup_steps: Number of linear warmup steps.
         output_dir: Directory to save checkpoints to.
@@ -25,10 +27,11 @@ class ModelConfig:
     model_name_or_path: str
     max_seq_length: int
     learning_rate: float
-    batch_size: int
+    per_device_batch_size: int
     total_steps: int
     warmup_steps: int
     output_dir: str
+    gradient_accumulation_steps: int = 1
 
     def __post_init__(self) -> None:
         """Validate configuration values after construction."""
@@ -36,8 +39,12 @@ class ModelConfig:
             raise ValueError(f"max_seq_length must be positive, got {self.max_seq_length}")
         if self.learning_rate <= 0:
             raise ValueError(f"learning_rate must be positive, got {self.learning_rate}")
-        if self.batch_size <= 0:
-            raise ValueError(f"batch_size must be positive, got {self.batch_size}")
+        if self.per_device_batch_size <= 0:
+            raise ValueError(f"per_device_batch_size must be positive, got {self.per_device_batch_size}")
+        if self.gradient_accumulation_steps <= 0:
+            raise ValueError(
+                f"gradient_accumulation_steps must be positive, got {self.gradient_accumulation_steps}"
+            )
         if self.total_steps <= 0:
             raise ValueError(f"total_steps must be positive, got {self.total_steps}")
         if self.warmup_steps < 0:

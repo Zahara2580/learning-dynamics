@@ -53,7 +53,7 @@ def main() -> None:
     config = ModelConfig.from_yaml(args.model_config)
     logger.info(f"Model: {config.model_name_or_path}")
 
-    batch_size = args.batch_size if args.batch_size is not None else config.batch_size
+    batch_size = args.batch_size if args.batch_size is not None else config.per_device_batch_size
 
     tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
     model = AutoModelForSeq2SeqLM.from_pretrained(
