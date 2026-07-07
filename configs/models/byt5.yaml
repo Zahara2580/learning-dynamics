@@ -1,0 +1,19 @@
+# Model Configuration
+model_name_or_path: "google/byt5-large"
+max_seq_length: 512
+
+# Training Configuration
+learning_rate: 1.0e-4
+batch_size: 1024
+total_steps: 10000
+warmup_steps: 5000
+
+# Checkpointing Configuration
+output_dir: "/scratch/rmdrak003/results/byt5"
+checkpoint_schedule:
+  save_initial_checkpoint: true
+
+# Experiment Tracking
+wandb_project: "cpt-learning-dynamics"
+wandb_run_name: "byt5-xho"
+logging_steps: 10
