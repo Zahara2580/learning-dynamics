@@ -14,6 +14,11 @@ Usage:
     uv run python3 -m src.unit_tests.cleanup --byt5 --nguni-byt5 --yes
     uv run python3 -m src.unit_tests.cleanup --corpus --finetune --yes
     uv run python3 -m src.unit_tests.cleanup --all --yes
+
+Note: --t5/--byt5/--nguni-byt5/--all only delete checkpoints/results, NOT
+preprocessed chunks (data/preprocessed/<model>) - those take a long time
+to regenerate. Pass --preprocessed explicitly (or --wipe-all) if you
+actually want to delete preprocessed chunks too.
 """
 
 import argparse
@@ -27,19 +32,18 @@ logger = logging.getLogger(__name__)
 
 SCRATCH_ROOT = Path("/scratch/rmdrak003")
 
-# Maps a flag name to the list of paths it deletes.
+# Maps a flag name to the list of paths it deletes. Preprocessed chunks
+# are deliberately excluded from t5/byt5/nguni-byt5/all - they're slow to
+# regenerate, so deleting them requires the explicit --preprocessed flag.
 TARGETS = {
     "t5": [
-        SCRATCH_ROOT / "data" / "preprocessed" / "t5",
         SCRATCH_ROOT / "results" / "t5",
         SCRATCH_ROOT / "results" / "t5-cputest",
     ],
     "byt5": [
-        SCRATCH_ROOT / "data" / "preprocessed" / "byt5",
         SCRATCH_ROOT / "results" / "byt5",
     ],
     "nguni-byt5": [
-        SCRATCH_ROOT / "data" / "preprocessed" / "nguni-byt5",
         SCRATCH_ROOT / "results" / "nguni-byt5",
     ],
     "corpus": [
@@ -55,12 +59,26 @@ TARGETS = {
     ],
 }
 
+# Preprocessed chunks - only deleted when --preprocessed is explicitly
+# passed, never bundled into --t5/--byt5/--nguni-byt5/--all.
+PREPROCESSED_TARGETS = {
+    "t5": [SCRATCH_ROOT / "data" / "preprocessed" / "t5"],
+    "byt5": [SCRATCH_ROOT / "data" / "preprocessed" / "byt5"],
+    "nguni-byt5": [SCRATCH_ROOT / "data" / "preprocessed" / "nguni-byt5"],
+}
+
 
 def parse_args() -> Namespace:
     parser = argparse.ArgumentParser(description="Delete specific categories of regenerable scratch data.")
     for name in TARGETS:
         parser.add_argument(f"--{name}", action="store_true", help=f"Delete {name} data.")
     parser.add_argument("--all", action="store_true", help="Delete everything (all categories above).")
+    parser.add_argument(
+        "--preprocessed",
+        action="store_true",
+        help="Also delete preprocessed chunks (data/preprocessed/<model>) for any model "
+             "flags passed (--t5/--byt5/--nguni-byt5/--all). Slow to regenerate - off by default.",
+    )
     parser.add_argument(
         "--yes",
         action="store_true",
@@ -88,9 +106,22 @@ def main() -> None:
 
     logger.info(f"Selected categories: {selected}")
 
+    paths_by_category = {name: list(TARGETS[name]) for name in selected}
+    if args.preprocessed:
+        for name in selected:
+            if name in PREPROCESSED_TARGETS:
+                paths_by_category[name].extend(PREPROCESSED_TARGETS[name])
+    else:
+        skipped_models = [name for name in selected if name in PREPROCESSED_TARGETS]
+        if skipped_models:
+            logger.info(
+                f"Preserving preprocessed chunks for {skipped_models} "
+                f"(pass --preprocessed to delete those too)."
+            )
+
     total_freed_gb = 0.0
     for name in selected:
-        for path in TARGETS[name]:
+        for path in paths_by_category[name]:
             if not path.exists():
                 logger.info(f"[{name}] {path} does not exist, skipping.")
                 continue
