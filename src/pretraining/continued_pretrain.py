@@ -14,8 +14,11 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 from argparse import Namespace
+from pathlib import Path
+
 import torch
 from datasets import load_from_disk
 from transformers import (
@@ -27,6 +30,7 @@ from transformers import (
     TrainerControl,
     TrainerState,
 )
+from transformers.optimization import Adafactor
 
 from src.pretraining.collator import DataCollatorForT5MLM, compute_input_and_target_lengths
 from src.pretraining.config import ModelConfig
@@ -56,6 +60,27 @@ class CustomCheckpointCallback(TrainerCallback):
         if state.global_step in self.checkpoint_steps:
             logger.info(f"Step {state.global_step} is a scheduled checkpoint - saving.")
             control.should_save = True
+        return control
+
+
+class MetricsLoggingCallback(TrainerCallback):
+    """
+    Appends every Trainer.log() call to a JSONL file, since report_to=[]
+    means logs would otherwise only be visible in stdout - this gives a
+    persisted record to build loss curves from later.
+    """
+
+    def __init__(self, metrics_path: Path):
+        self.metrics_path = metrics_path
+
+    def on_log(
+        self, args, state: TrainerState, control: TrainerControl, logs=None, **kwargs
+    ) -> TrainerControl:
+        if logs is None:
+            return control
+        record = {"step": state.global_step, "epoch": state.epoch, **logs}
+        with open(self.metrics_path, "a") as f:
+            f.write(json.dumps(record) + "\n")
         return control
 
 
@@ -126,21 +151,34 @@ def main() -> None:
         decoder_start_token_id=tokenizer.pad_token_id,
     )
 
-    checkpoint_steps = compute_checkpoint_steps(config.total_steps, CheckpointScheduleConfig())
+    # --max-steps overrides how many steps actually run (for quick tests)
+    actual_max_steps = args.max_steps if args.max_steps is not None else config.total_steps
+
+    checkpoint_steps = compute_checkpoint_steps(actual_max_steps, CheckpointScheduleConfig())
     logger.info(f"Checkpoint schedule: {len(checkpoint_steps)} checkpoints at steps {checkpoint_steps}")
 
     resume_from = None
     if args.resume:
         resume_from = find_latest_checkpoint(config.output_dir)
-# --max-steps overrides how many steps actually run (for quick tests)
-    actual_max_steps = args.max_steps if args.max_steps is not None else config.total_steps
+
+    # Trainer's built-in optim="adafactor" uses relative_step/warmup_init
+    # defaults meant for from-scratch pretraining, which blew up loss to
+    # ~330 during continued pretraining. Building Adafactor explicitly
+    # with a fixed lr (scale_parameter/relative_step/warmup_init off)
+    # fixes this.
+    optimizer = Adafactor(
+        model.parameters(),
+        lr=config.learning_rate,
+        scale_parameter=False,
+        relative_step=False,
+        warmup_init=False,
+    )
 
     training_args = Seq2SeqTrainingArguments(
         output_dir=config.output_dir,
         learning_rate=config.learning_rate,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
-        optim="adafactor",
         max_steps=actual_max_steps,
         warmup_steps=config.warmup_steps,
         save_strategy="no",
@@ -149,12 +187,19 @@ def main() -> None:
         report_to=[],
     )
 
+    metrics_path = Path(config.output_dir) / "metrics.jsonl"
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+
     trainer = Seq2SeqTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset,
         data_collator=collator,
-        callbacks=[CustomCheckpointCallback(checkpoint_steps)],
+        callbacks=[
+            CustomCheckpointCallback(checkpoint_steps),
+            MetricsLoggingCallback(metrics_path),
+        ],
+        optimizers=(optimizer, None),  # None lets Trainer build its default LR scheduler around our optimizer
     )
 
     logger.info("Starting training")

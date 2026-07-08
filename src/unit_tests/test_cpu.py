@@ -13,7 +13,7 @@ from transformers import (
     TrainerControl,
     TrainerState,
 )
-
+from transformers.optimization import Adafactor
 from src.pretraining.collator import DataCollatorForT5MLM, compute_input_and_target_lengths
 from src.pretraining.config import ModelConfig
 from src.pretraining.resume import find_latest_checkpoint
@@ -89,23 +89,33 @@ def main() -> None:
 
     actual_max_steps = args.max_steps if args.max_steps is not None else config.total_steps
 
+    optimizer = Adafactor(
+        model.parameters(),
+        lr=config.learning_rate,
+        scale_parameter=False,
+        relative_step=False,
+        warmup_init=False,
+    )
+
     training_args = Seq2SeqTrainingArguments(
-        output_dir=config.output_dir + "-cputest",
-        learning_rate=config.learning_rate,
+        output_dir=config.output_dir,
         per_device_train_batch_size=batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
         max_steps=actual_max_steps,
         warmup_steps=config.warmup_steps,
         save_strategy="no",
-        logging_steps=1,
-        use_cpu=True,
+        logging_steps=10,
+        bf16=True,
         report_to=[],
     )
+
     trainer = Seq2SeqTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset,
         data_collator=collator,
         callbacks=[CustomCheckpointCallback(checkpoint_steps)],
+        optimizers=(optimizer, None),  # None lets Trainer build its default LR scheduler around our optimizer
     )
 
     logger.info("Starting training...")
