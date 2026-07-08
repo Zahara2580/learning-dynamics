@@ -128,7 +128,7 @@ def main() -> None:
     tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
     model = AutoModelForSeq2SeqLM.from_pretrained(
         config.model_name_or_path,
-        torch_dtype=torch.bfloat16,
+        torch_dtype=torch.float32,
     )
 
     logger.info(f"Loading preprocessed chunks from {args.input}...")
@@ -175,7 +175,7 @@ def main() -> None:
         warmup_steps=config.warmup_steps,
         save_strategy="no",
         logging_steps=1,
-        bf16=True,
+        bf16=False,
         report_to=[],
     )
 
