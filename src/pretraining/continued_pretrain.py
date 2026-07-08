@@ -30,7 +30,6 @@ from transformers import (
     TrainerControl,
     TrainerState,
 )
-from transformers.optimization import Adafactor
 
 from src.pretraining.collator import DataCollatorForT5MLM, compute_input_and_target_lengths
 from src.pretraining.config import ModelConfig
@@ -161,24 +160,17 @@ def main() -> None:
     if args.resume:
         resume_from = find_latest_checkpoint(config.output_dir)
 
-    # Trainer's built-in optim="adafactor" uses relative_step/warmup_init
-    # defaults meant for from-scratch pretraining, which blew up loss to
-    # ~330 during continued pretraining. Building Adafactor explicitly
-    # with a fixed lr (scale_parameter/relative_step/warmup_init off)
-    # fixes this.
-    optimizer = Adafactor(
-        model.parameters(),
-        lr=config.learning_rate,
-        scale_parameter=False,
-        relative_step=False,
-        warmup_init=False,
-    )
-
+    # DIAGNOSTIC: Adafactor (both Trainer's built-in optim="adafactor" and
+    # our own explicit construction, confirmed identical in this transformers
+    # version) gives ~330 loss here, while a CPU test run with AdamW gave a
+    # sensible ~2.5. Switching to AdamW temporarily to confirm the optimizer
+    # is really the source of the bad loss before investigating further.
     training_args = Seq2SeqTrainingArguments(
         output_dir=config.output_dir,
         learning_rate=config.learning_rate,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
+        optim="adamw_torch",
         max_steps=actual_max_steps,
         warmup_steps=config.warmup_steps,
         save_strategy="no",
@@ -199,7 +191,6 @@ def main() -> None:
             CustomCheckpointCallback(checkpoint_steps),
             MetricsLoggingCallback(metrics_path),
         ],
-        optimizers=(optimizer, None),  # None lets Trainer build its default LR scheduler around our optimizer
     )
 
     logger.info("Starting training")
