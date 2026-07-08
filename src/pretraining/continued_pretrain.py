@@ -174,7 +174,7 @@ def main() -> None:
         max_steps=actual_max_steps,
         warmup_steps=config.warmup_steps,
         save_strategy="no",
-        logging_steps=10,
+        logging_steps=1,
         bf16=True,
         report_to=[],
     )
