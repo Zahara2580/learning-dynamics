@@ -109,3 +109,6 @@ def main():
     logger.info(f"accum=10: final grad norm = {norm_10:.6f}")
     logger.info(f"Ratio (10 / 1) = {norm_10 / norm_1:.2f}")
     logger.info("Ratio near 1 = gradients correctly averaged. Ratio near 10 = scaling bug.")
+
+if __name__ == "__main__":
+    main()
