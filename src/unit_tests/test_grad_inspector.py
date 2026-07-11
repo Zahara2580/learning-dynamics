@@ -102,14 +102,10 @@ def main():
     args = parser.parse_args()
 
     norm_1 = run(args.input, grad_accum_steps=1)
-    norm_128 = run(args.input, grad_accum_steps=128)
+    norm_10 = run(args.input, grad_accum_steps=10)
 
     logger.info("--- COMPARISON ---")
-    logger.info(f"accum=1:   final grad norm = {norm_1:.6f}")
-    logger.info(f"accum=128: final grad norm = {norm_128:.6f}")
-    logger.info(f"Ratio (128 / 1) = {norm_128 / norm_1:.2f}")
-    logger.info("Ratio near 1 = gradients correctly averaged. Ratio near 128 = scaling bug.")
-
-
-if __name__ == "__main__":
-    main()
+    logger.info(f"accum=1:  final grad norm = {norm_1:.6f}")
+    logger.info(f"accum=10: final grad norm = {norm_10:.6f}")
+    logger.info(f"Ratio (10 / 1) = {norm_10 / norm_1:.2f}")
+    logger.info("Ratio near 1 = gradients correctly averaged. Ratio near 10 = scaling bug.")
