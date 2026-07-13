@@ -9,9 +9,10 @@
 #SBATCH --output=logs/test_batch_size_1024_%j.log
 #SBATCH --error=logs/test_batch_size_1024_%j.log
 #
-# 100-step trial at per_device_batch_size=256, gradient_accumulation_steps=4
-# (effective batch size 1024) to check GPU memory stays stable in bf16
-# over a longer run rather than just the first few steps.
+# 100-step trial at per_device_batch_size=128, gradient_accumulation_steps=8
+# (effective batch size 1024; batch_size=256/accum=4 OOM'd on an L40S) to
+# check GPU memory stays stable in bf16 over a longer run rather than just
+# the first few steps.
 
 # Update to latest commit
 git pull
@@ -43,6 +44,6 @@ uv run accelerate launch \
     --model-config configs/models/t5.yaml \
     --input /scratch/rmdrak003/data/preprocessed/t5 \
     --max-steps 100 \
-    --batch-size 256 \
-    --gradient-accumulation-steps 4 \
+    --batch-size 128 \
+    --gradient-accumulation-steps 8 \
     --log-memory-every 10
