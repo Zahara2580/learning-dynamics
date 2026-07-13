@@ -70,8 +70,32 @@ class CustomCheckpointCallback(TrainerCallback):
             model = kwargs.get("model")
             if model is not None:
                 checkpoint_path = self.save_dir / f"checkpoint-{state.global_step}"
-                model.save_pretrained(checkpoint_path)
-                logger.info(f"Saved weights-only schedule checkpoint: {checkpoint_path}")
+                # save_pretrained on a state_dict cast to bf16, rather than
+                # model.to(torch.bfloat16), so the live training model (and
+                # its optimizer, which is tied to its param dtype) is never
+                # mutated mid-training - only the on-disk snapshot is bf16.
+                bf16_state_dict = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
+                model.save_pretrained(checkpoint_path, state_dict=bf16_state_dict)
+                logger.info(f"Saved weights-only schedule checkpoint (bf16): {checkpoint_path}")
+        return control
+
+
+class GPUMemoryLoggingCallback(TrainerCallback):
+    """
+    Logs peak GPU memory usage periodically, to check over a longer run
+    whether memory plateaus after the first few steps (expected) or keeps
+    growing (would indicate a leak).
+    """
+
+    def __init__(self, log_every: int):
+        self.log_every = log_every
+
+    def on_step_end(
+        self, args, state: TrainerState, control: TrainerControl, **kwargs
+    ) -> TrainerControl:
+        if state.is_world_process_zero and torch.cuda.is_available() and state.global_step % self.log_every == 0:
+            peak_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
+            logger.info(f"Step {state.global_step}: peak GPU memory allocated = {peak_gb:.2f} GB")
         return control
 
 
@@ -127,6 +151,13 @@ def parse_args() -> Namespace:
              "checkpoint. Lower this for quick resume tests so a checkpoint "
              "appears without waiting for the default 500 steps.",
     )
+    parser.add_argument(
+        "--log-memory-every",
+        type=int,
+        default=10,
+        help="Interval (in steps) at which peak GPU memory usage is logged, "
+             "to help spot memory leaks over a longer run.",
+    )
     return parser.parse_args()
 
 def main() -> None:
@@ -154,7 +185,7 @@ def main() -> None:
     tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
     model = AutoModelForSeq2SeqLM.from_pretrained(
         config.model_name_or_path,
-        torch_dtype=torch.float32,
+        torch_dtype=torch.bfloat16,
     )
 
     logger.info(f"Loading preprocessed chunks from {args.input}...")
@@ -195,11 +226,10 @@ def main() -> None:
     if args.resume:
         resume_from = find_latest_checkpoint(str(resume_checkpoint_dir))
 
-    # DIAGNOSTIC: Adafactor (both Trainer's built-in optim="adafactor" and
-    # our own explicit construction, confirmed identical in this transformers
-    # version) gives ~330 loss here, while a CPU test run with AdamW gave a
-    # sensible ~2.5. Switching to AdamW temporarily to confirm the optimizer
-    # is really the source of the bad loss before investigating further.
+    # NOTE: the ~330 loss seen with grad_accum=128 was Trainer logging the
+    # *summed* loss over the accumulation window, not the mean (330 / 128
+    # is consistent with the ~2.5 loss seen at grad_accum=1) - gradients
+    # themselves were confirmed fine via a separate diagnostic script.
     training_args = Seq2SeqTrainingArguments(
         output_dir=str(resume_checkpoint_dir),
         learning_rate=config.learning_rate,
@@ -212,7 +242,7 @@ def main() -> None:
         save_steps=args.save_steps,
         save_total_limit=1,
         logging_steps=1,
-        bf16=False,
+        bf16=True,
         report_to=["wandb"] if use_wandb else [],
         run_name=config.wandb_run_name if use_wandb else None,
     )
@@ -228,6 +258,7 @@ def main() -> None:
         callbacks=[
             CustomCheckpointCallback(checkpoint_steps, save_dir=schedule_checkpoint_dir),
             MetricsLoggingCallback(metrics_path),
+            GPUMemoryLoggingCallback(log_every=args.log_memory_every),
         ],
     )
 

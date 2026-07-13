@@ -9,7 +9,7 @@ a unique, irreplaceable source of truth. Still defaults to a dry run
 so nothing is ever deleted without an explicit --yes.
 
 Usage:
-    uv run python3 -m src.unit_tests.cleanup --t5 --dry-run
+    uv run python3 -m src.utils.cleanup --t5 --dry-run
     uv run python3 -m src.unit_tests.cleanup --t5 --yes
     uv run python3 -m src.unit_tests.cleanup --byt5 --nguni-byt5 --yes
     uv run python3 -m src.unit_tests.cleanup --corpus --finetune --yes
