@@ -2,28 +2,22 @@
 #SBATCH --account=l40sfree
 #SBATCH --partition=l40s
 #SBATCH --nodes=1 --ntasks=1 --gres=gpu:l40s:1
-#SBATCH --time=24:00:00
-#SBATCH --job-name="cpt-pretrain-t5"
+#SBATCH --time=00:10:00
+#SBATCH --job-name="cpt-fit-t5-bs24"
 #SBATCH --mail-user=rmdrak003@myuct.ac.za
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --output=logs/pretrain_t5_%j.log
-#SBATCH --error=logs/pretrain_t5_%j.log
+#SBATCH --output=logs/memory_fit_t5_bs24_%j.log
+#SBATCH --error=logs/memory_fit_t5_bs24_%j.log
+#
+# Quick memory-fit check for t5: per_device_batch_size=24,
+# gradient_accumulation_steps=43 (effective batch size 1032
+# - 24 doesn't divide 1024 evenly, closest divisor used). Only 3 steps,
+# purely to check whether bs=24 fits in GPU memory on an L40S - not for
+# loss/eval curves. --no-save is passed since this is a throwaway fit check.
 
 # Update to latest commit
 git pull
 git log -1
-
-# Number of additional 24h jobs to chain after this one, so the run can
-# span the ~3 days a full CPT run needs despite the 24-48h wall-time cap.
-# Defaults to 4 on first submission (no CHAIN_JOBS set); each resubmission
-# decrements it until it reaches 0, at which point no further job is queued.
-CHAIN_JOBS=${CHAIN_JOBS:-4}
-if [ "${CHAIN_JOBS}" -gt 0 ]; then
-    echo "Queuing next chained job (CHAIN_JOBS remaining after this: $((CHAIN_JOBS - 1)))"
-    sbatch --dependency=afterany:${SLURM_JOB_ID} \
-        --export=ALL,CHAIN_JOBS=$((CHAIN_JOBS - 1)) \
-        "$0"
-fi
 
 # Suppress uv hardlink warning
 export UV_LINK_MODE=copy
@@ -43,8 +37,6 @@ module load python/miniconda3-py3.12
 cd /scratch/rmdrak003/learning-dynamics
 uv sync --frozen
 
-# --resume is always passed: find_latest_checkpoint returns None when no
-# checkpoint exists yet, so the first job in the chain just starts fresh.
 uv run accelerate launch \
     --num_processes ${SLURM_GPUS_ON_NODE:-1} \
     --mixed_precision bf16 \
@@ -53,5 +45,10 @@ uv run accelerate launch \
     --model-config configs/models/t5.yaml \
     --input /scratch/rmdrak003/data/preprocessed/t5 \
     --eval-input /scratch/rmdrak003/data/preprocessed/t5-validation \
-    --wandb-run-name t5-xho-production-run1 \
-    --resume
+    --max-steps 3 \
+    --batch-size 24 \
+    --gradient-accumulation-steps 43 \
+    --wandb-run-name t5-xho-fitcheck-bs24 \
+    --metrics-filename metrics_fitcheck_t5-bs24.jsonl \
+    --run-subdir fitcheck-t5-bs24 \
+    --no-save
