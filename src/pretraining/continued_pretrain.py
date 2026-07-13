@@ -196,6 +196,15 @@ def parse_args() -> Namespace:
              "one shared metrics.jsonl.",
     )
     parser.add_argument(
+        "--run-subdir",
+        type=str,
+        default=None,
+        help="Subdirectory (under config.output_dir) to isolate this run's "
+             "checkpoints/ and resume/ dirs under. Required when running multiple "
+             "trials against the same output_dir concurrently (e.g. a batch-size "
+             "sweep), so they never share a Trainer output_dir or checkpoint path.",
+    )
+    parser.add_argument(
         "--wandb-run-name",
         type=str,
         default=None,
@@ -276,9 +285,13 @@ def main() -> None:
     # Weights-only schedule snapshots (for fine-tuning) live under
     # checkpoints/, separate from resume/'s full-state checkpoints
     # (optimizer + scheduler state), so find_latest_checkpoint never
-    # picks a weights-only folder to resume training from.
-    schedule_checkpoint_dir = Path(config.output_dir) / "checkpoints"
-    resume_checkpoint_dir = Path(config.output_dir) / "resume"
+    # picks a weights-only folder to resume training from. --run-subdir
+    # further isolates these under a per-run directory, so concurrent
+    # trials against the same config/output_dir (e.g. a batch-size sweep)
+    # never share a Trainer output_dir or checkpoint path.
+    run_root = Path(config.output_dir) / args.run_subdir if args.run_subdir else Path(config.output_dir)
+    schedule_checkpoint_dir = run_root / "checkpoints"
+    resume_checkpoint_dir = run_root / "resume"
     schedule_checkpoint_dir.mkdir(parents=True, exist_ok=True)
     resume_checkpoint_dir.mkdir(parents=True, exist_ok=True)
 

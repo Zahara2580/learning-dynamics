@@ -50,4 +50,5 @@ uv run accelerate launch \
     --gradient-accumulation-steps 128 \
     --wandb-run-name t5-xho-bs8 \
     --metrics-filename metrics_t5-xho-bs8.jsonl \
+    --run-subdir t5-xho-bs8 \
     --no-save

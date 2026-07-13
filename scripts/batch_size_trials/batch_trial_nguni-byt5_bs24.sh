@@ -50,4 +50,5 @@ uv run accelerate launch \
     --gradient-accumulation-steps 43 \
     --wandb-run-name nguni-byt5-xho-bs24 \
     --metrics-filename metrics_nguni-byt5-xho-bs24.jsonl \
+    --run-subdir nguni-byt5-xho-bs24 \
     --no-save
