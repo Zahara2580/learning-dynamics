@@ -52,7 +52,7 @@ uv sync --frozen
 # Build a throwaway model config pointing at TEST_OUTPUT_DIR, so this
 # test never writes into the real per-model output_dir from MODEL_CONFIG.
 TEST_CONFIG=$(mktemp --suffix=.yaml)
-python3 - "$MODEL_CONFIG" "$TEST_OUTPUT_DIR" "$TEST_CONFIG" << 'EOF'
+uv run python3 - "$MODEL_CONFIG" "$TEST_OUTPUT_DIR" "$TEST_CONFIG" << 'EOF'
 import sys
 import yaml
 
