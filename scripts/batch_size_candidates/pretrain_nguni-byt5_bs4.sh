@@ -77,4 +77,6 @@ uv run accelerate launch \
     --wandb-run-name nguni-byt5-xho-bs4 \
     --metrics-filename metrics_nguni-byt5-xho-bs4.jsonl \
     --run-subdir nguni-byt5-xho-bs4 \
+    --eval-steps 200 \
+    --save-steps 200 \
     --resume

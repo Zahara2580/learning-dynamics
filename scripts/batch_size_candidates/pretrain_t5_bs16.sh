@@ -77,4 +77,6 @@ uv run accelerate launch \
     --wandb-run-name t5-xho-bs16 \
     --metrics-filename metrics_t5-xho-bs16.jsonl \
     --run-subdir t5-xho-bs16 \
+    --eval-steps 200 \
+    --save-steps 200 \
     --resume

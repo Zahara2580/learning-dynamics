@@ -77,4 +77,6 @@ uv run accelerate launch \
     --wandb-run-name byt5-xho-bs8 \
     --metrics-filename metrics_byt5-xho-bs8.jsonl \
     --run-subdir byt5-xho-bs8 \
+    --eval-steps 200 \
+    --save-steps 200 \
     --resume
