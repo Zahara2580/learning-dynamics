@@ -213,6 +213,17 @@ def parse_args() -> Namespace:
              "would otherwise all log to the same wandb run name.",
     )
     parser.add_argument(
+        "--model-dtype",
+        type=str,
+        choices=["bf16", "fp32"],
+        default="bf16",
+        help="Dtype to load and train the model in. fp32 exists as a diagnostic "
+             "for suspected bf16 numerical issues (e.g. byt5 showing worse-than-"
+             "random loss at load time); it disables Trainer-level bf16 autocast "
+             "too, so pass --mixed_precision no to accelerate launch as well for "
+             "a clean fp32 run.",
+    )
+    parser.add_argument(
         "--early-stopping-patience",
         type=int,
         default=None,
@@ -246,10 +257,12 @@ def main() -> None:
         f"gradient accumulation steps: {gradient_accumulation_steps}, "
         f"effective batch size: {effective_batch_size}"
     )
+    use_bf16 = args.model_dtype == "bf16"
+    logger.info(f"Model dtype: {args.model_dtype}")
     tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
     model = AutoModelForSeq2SeqLM.from_pretrained(
         config.model_name_or_path,
-        torch_dtype=torch.bfloat16,
+        torch_dtype=torch.bfloat16 if use_bf16 else torch.float32,
     )
 
     logger.info(f"Loading preprocessed chunks from {args.input}...")
@@ -320,7 +333,7 @@ def main() -> None:
         save_steps=args.save_steps,
         save_total_limit=1,
         logging_steps=1,
-        bf16=True,
+        bf16=use_bf16,
         eval_strategy="steps",
         eval_steps=args.eval_steps,
         # load_best_model_at_end/metric_for_best_model are only needed by
