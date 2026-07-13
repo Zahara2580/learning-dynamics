@@ -258,12 +258,21 @@ def main() -> None:
         f"effective batch size: {effective_batch_size}"
     )
     use_bf16 = args.model_dtype == "bf16"
-    logger.info(f"Model dtype: {args.model_dtype}")
     tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
     model = AutoModelForSeq2SeqLM.from_pretrained(
         config.model_name_or_path,
         torch_dtype=torch.bfloat16 if use_bf16 else torch.float32,
     )
+    # Read the dtype back off the actual loaded parameters, rather than just
+    # trusting --model-dtype, so a from_pretrained quirk (e.g. a checkpoint
+    # shard that ignores torch_dtype) would be caught here rather than
+    # silently invalidating a dtype comparison experiment.
+    actual_dtype = next(model.parameters()).dtype
+    logger.info(f"Requested model dtype: {args.model_dtype}, actual loaded dtype: {actual_dtype}")
+    if use_bf16 and actual_dtype != torch.bfloat16:
+        raise ValueError(f"Requested bf16 but model loaded as {actual_dtype} - dtype mismatch.")
+    if not use_bf16 and actual_dtype != torch.float32:
+        raise ValueError(f"Requested fp32 but model loaded as {actual_dtype} - dtype mismatch.")
 
     logger.info(f"Loading preprocessed chunks from {args.input}...")
     dataset = load_from_disk(args.input)
