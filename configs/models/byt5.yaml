@@ -4,7 +4,8 @@ max_seq_length: 512
 
 # Training Configuration
 learning_rate: 1.0e-4
-per_device_batch_size: 1024
+per_device_batch_size: 8
+gradient_accumulation_steps: 128
 total_steps: 10000
 warmup_steps: 5000
 

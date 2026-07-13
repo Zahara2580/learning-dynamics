@@ -23,6 +23,8 @@ class ModelConfig:
         total_steps: Total number of training steps.
         warmup_steps: Number of linear warmup steps.
         output_dir: Directory to save checkpoints to.
+        wandb_project: Weights & Biases project name to log to.
+        wandb_run_name: Weights & Biases run name.
     """
     model_name_or_path: str
     max_seq_length: int
@@ -32,6 +34,8 @@ class ModelConfig:
     warmup_steps: int
     output_dir: str
     gradient_accumulation_steps: int = 1
+    wandb_project: str = ""
+    wandb_run_name: str = ""
 
     def __post_init__(self) -> None:
         """Validate configuration values after construction."""
@@ -56,8 +60,8 @@ class ModelConfig:
         Load a ModelConfig from a YAML file.
 
         Only recognised fields are read from the file - extra keys
-        (e.g. wandb_project, checkpoint_schedule) are ignored here,
-        since this class only covers what preprocessing/training need.
+        (e.g. checkpoint_schedule) are ignored here, since this class
+        only covers what preprocessing/training need.
 
         :param path: Path to the YAML config file.
         :return: Populated ModelConfig instance.

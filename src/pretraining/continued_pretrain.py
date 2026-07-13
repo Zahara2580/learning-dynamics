@@ -16,11 +16,13 @@ Usage:
 import argparse
 import json
 import logging
+import os
 from argparse import Namespace
 from pathlib import Path
 
 import torch
 from datasets import load_from_disk
+from dotenv import load_dotenv
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
@@ -36,6 +38,8 @@ from src.pretraining.config import ModelConfig
 from src.pretraining.resume import find_latest_checkpoint
 from src.pretraining.schedule import CheckpointScheduleConfig, compute_checkpoint_steps
 
+load_dotenv()
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -45,20 +49,29 @@ MEAN_NOISE_SPAN_LENGTH = 3.0
 
 class CustomCheckpointCallback(TrainerCallback):
     """
-    Saves checkpoints only at the exact steps given by our two-phase
-    schedule, since Trainer's built-in save_steps only supports a
-    single fixed interval, not an irregular list of steps.
+    Saves weights-only snapshots at the exact steps given by our
+    two-phase schedule, since Trainer's built-in save_steps only
+    supports a single fixed interval, not an irregular list of steps.
+
+    These are separate from Trainer's own save_strategy="steps"
+    checkpoints (which include optimizer/scheduler state for
+    resumption): fine-tuning only ever needs model weights, so saving
+    full state at all ~19 schedule steps would waste a lot of disk.
     """
 
-    def __init__(self, checkpoint_steps: list[int]):
+    def __init__(self, checkpoint_steps: list[int], save_dir: Path):
         self.checkpoint_steps = set(checkpoint_steps)
+        self.save_dir = save_dir
 
     def on_step_end(
         self, args, state: TrainerState, control: TrainerControl, **kwargs
     ) -> TrainerControl:
-        if state.global_step in self.checkpoint_steps:
-            logger.info(f"Step {state.global_step} is a scheduled checkpoint - saving.")
-            control.should_save = True
+        if state.global_step in self.checkpoint_steps and state.is_world_process_zero:
+            model = kwargs.get("model")
+            if model is not None:
+                checkpoint_path = self.save_dir / f"checkpoint-{state.global_step}"
+                model.save_pretrained(checkpoint_path)
+                logger.info(f"Saved weights-only schedule checkpoint: {checkpoint_path}")
         return control
 
 
@@ -106,12 +119,25 @@ def parse_args() -> Namespace:
              "effective batch size without needing it all in memory at once. "
              "effective_batch_size = batch_size * this value.",
     )
+    parser.add_argument(
+        "--save-steps",
+        type=int,
+        default=500,
+        help="Interval (in steps) at which Trainer saves a full-state resume "
+             "checkpoint. Lower this for quick resume tests so a checkpoint "
+             "appears without waiting for the default 500 steps.",
+    )
     return parser.parse_args()
 
 def main() -> None:
     args = parse_args()
 
     config = ModelConfig.from_yaml(args.model_config)
+    use_wandb = bool(config.wandb_project) and bool(os.environ.get("WANDB_API_KEY"))
+    if use_wandb:
+        logger.info(f"Logging to wandb project: {config.wandb_project}, run: {config.wandb_run_name}")
+    else:
+        logger.info("wandb not configured (missing wandb_project in config or WANDB_API_KEY in .env) - skipping.")
     logger.info(f"Model: {config.model_name_or_path}")
     batch_size = args.batch_size if args.batch_size is not None else config.per_device_batch_size
     gradient_accumulation_steps = (
@@ -156,9 +182,18 @@ def main() -> None:
     checkpoint_steps = compute_checkpoint_steps(actual_max_steps, CheckpointScheduleConfig())
     logger.info(f"Checkpoint schedule: {len(checkpoint_steps)} checkpoints at steps {checkpoint_steps}")
 
+    # Weights-only schedule snapshots (for fine-tuning) live under
+    # checkpoints/, separate from resume/'s full-state checkpoints
+    # (optimizer + scheduler state), so find_latest_checkpoint never
+    # picks a weights-only folder to resume training from.
+    schedule_checkpoint_dir = Path(config.output_dir) / "checkpoints"
+    resume_checkpoint_dir = Path(config.output_dir) / "resume"
+    schedule_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    resume_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
     resume_from = None
     if args.resume:
-        resume_from = find_latest_checkpoint(config.output_dir)
+        resume_from = find_latest_checkpoint(str(resume_checkpoint_dir))
 
     # DIAGNOSTIC: Adafactor (both Trainer's built-in optim="adafactor" and
     # our own explicit construction, confirmed identical in this transformers
@@ -166,17 +201,20 @@ def main() -> None:
     # sensible ~2.5. Switching to AdamW temporarily to confirm the optimizer
     # is really the source of the bad loss before investigating further.
     training_args = Seq2SeqTrainingArguments(
-        output_dir=config.output_dir,
+        output_dir=str(resume_checkpoint_dir),
         learning_rate=config.learning_rate,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         optim="adamw_torch",
         max_steps=actual_max_steps,
         warmup_steps=config.warmup_steps,
-        save_strategy="no",
+        save_strategy="steps",
+        save_steps=args.save_steps,
+        save_total_limit=1,
         logging_steps=1,
         bf16=False,
-        report_to=[],
+        report_to=["wandb"] if use_wandb else [],
+        run_name=config.wandb_run_name if use_wandb else None,
     )
 
     metrics_path = Path(config.output_dir) / "metrics.jsonl"
@@ -188,7 +226,7 @@ def main() -> None:
         train_dataset=dataset,
         data_collator=collator,
         callbacks=[
-            CustomCheckpointCallback(checkpoint_steps),
+            CustomCheckpointCallback(checkpoint_steps, save_dir=schedule_checkpoint_dir),
             MetricsLoggingCallback(metrics_path),
         ],
     )
