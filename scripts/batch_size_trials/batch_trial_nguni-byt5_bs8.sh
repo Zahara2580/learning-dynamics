@@ -49,4 +49,5 @@ uv run accelerate launch \
     --batch-size 8 \
     --gradient-accumulation-steps 128 \
     --wandb-run-name nguni-byt5-xho-bs8 \
+    --metrics-filename metrics_nguni-byt5-xho-bs8.jsonl \
     --no-save

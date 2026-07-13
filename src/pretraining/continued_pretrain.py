@@ -187,6 +187,15 @@ def parse_args() -> Namespace:
              "wouldn't fit within --max-steps.",
     )
     parser.add_argument(
+        "--metrics-filename",
+        type=str,
+        default="metrics.jsonl",
+        help="Filename (under config.output_dir) to append Trainer.log() records to. "
+             "Override this when running multiple trials against the same output_dir "
+             "concurrently (e.g. a batch-size sweep), so they don't interleave into "
+             "one shared metrics.jsonl.",
+    )
+    parser.add_argument(
         "--wandb-run-name",
         type=str,
         default=None,
@@ -311,7 +320,7 @@ def main() -> None:
         run_name=wandb_run_name if use_wandb else None,
     )
 
-    metrics_path = Path(config.output_dir) / "metrics.jsonl"
+    metrics_path = Path(config.output_dir) / args.metrics_filename
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
 
     callbacks: list[TrainerCallback] = [
