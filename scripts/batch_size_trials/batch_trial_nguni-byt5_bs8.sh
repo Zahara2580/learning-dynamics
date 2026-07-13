@@ -2,12 +2,17 @@
 #SBATCH --account=l40sfree
 #SBATCH --partition=l40s
 #SBATCH --nodes=1 --ntasks=1 --gres=gpu:l40s:1
-#SBATCH --time=00:30:00
-#SBATCH --job-name="cpt-pretrain-nguni-byt5"
+#SBATCH --time=03:00:00
+#SBATCH --job-name="cpt-batch-nguni-byt5-bs8"
 #SBATCH --mail-user=rmdrak003@myuct.ac.za
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --output=logs/pretrain_nguni_byt5_%j.log
-#SBATCH --error=logs/pretrain_nguni_byt5_%j.log
+#SBATCH --output=logs/batch_trial_nguni-byt5_bs8_%j.log
+#SBATCH --error=logs/batch_trial_nguni-byt5_bs8_%j.log
+#
+# Batch size trial for nguni-byt5: per_device_batch_size=8,
+# gradient_accumulation_steps=128 (effective batch size 1024).
+# 200 steps with a 100-step warmup, to compare validation loss curves
+# across batch sizes 8/16/24 at a fixed effective batch size. --no-save is passed since these trials are only for loss/eval curves, not for keeping the model.
 
 # Update to latest commit
 git pull
@@ -39,4 +44,9 @@ uv run accelerate launch \
     --model-config configs/models/nguni-byt5.yaml \
     --input /scratch/rmdrak003/data/preprocessed/nguni-byt5 \
     --eval-input /scratch/rmdrak003/data/preprocessed/nguni-byt5-validation \
-    --max-steps 10
+    --max-steps 200 \
+    --warmup-steps 100 \
+    --batch-size 8 \
+    --gradient-accumulation-steps 128 \
+    --wandb-run-name nguni-byt5-xho-bs8 \
+    --no-save

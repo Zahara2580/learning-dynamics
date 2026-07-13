@@ -26,6 +26,7 @@ set -euo pipefail
 
 MODEL_CONFIG=${MODEL_CONFIG:-configs/models/t5.yaml}
 INPUT=${INPUT:-/scratch/rmdrak003/data/preprocessed/t5}
+EVAL_INPUT=${EVAL_INPUT:-/scratch/rmdrak003/data/preprocessed/t5-validation}
 TEST_OUTPUT_DIR=${TEST_OUTPUT_DIR:-/scratch/rmdrak003/results/test-checkpointing}
 FIRST_RUN_STEPS=${FIRST_RUN_STEPS:-5}
 SECOND_RUN_STEPS=${SECOND_RUN_STEPS:-10}
@@ -76,6 +77,7 @@ uv run accelerate launch \
     --module src.pretraining.continued_pretrain \
     --model-config "${TEST_CONFIG}" \
     --input "${INPUT}" \
+    --eval-input "${EVAL_INPUT}" \
     --max-steps "${FIRST_RUN_STEPS}" \
     --save-steps "${SAVE_STEPS}"
 
@@ -95,6 +97,7 @@ uv run accelerate launch \
     --module src.pretraining.continued_pretrain \
     --model-config "${TEST_CONFIG}" \
     --input "${INPUT}" \
+    --eval-input "${EVAL_INPUT}" \
     --max-steps "${SECOND_RUN_STEPS}" \
     --save-steps "${SAVE_STEPS}" \
     --resume \

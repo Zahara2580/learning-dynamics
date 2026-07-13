@@ -8,6 +8,11 @@ them with sentinel tokens) - that happens later, on the fly, at training
 time via a data collator (e.g. DataCollatorForT5MLM). Keeping corruption
 out of preprocessing means the same fixed-length token chunks can be
 reused across training runs without needing to be regenerated.
+
+Run once for the train split and once for the validation split (the
+latter is needed for continued_pretrain.py's --eval-input):
+    uv run python3 -m src.data_processing.preprocess_wura --input /path/to/raw/wura --model-config configs/models/t5.yaml --split train --output /path/to/preprocessed/t5/train
+    uv run python3 -m src.data_processing.preprocess_wura --input /path/to/raw/wura --model-config configs/models/t5.yaml --split validation --output /path/to/preprocessed/t5/validation
 """
 
 import argparse

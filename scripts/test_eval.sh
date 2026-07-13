@@ -3,11 +3,15 @@
 #SBATCH --partition=l40s
 #SBATCH --nodes=1 --ntasks=1 --gres=gpu:l40s:1
 #SBATCH --time=00:30:00
-#SBATCH --job-name="cpt-pretrain-nguni-byt5"
+#SBATCH --job-name="cpt-test-eval"
 #SBATCH --mail-user=rmdrak003@myuct.ac.za
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --output=logs/pretrain_nguni_byt5_%j.log
-#SBATCH --error=logs/pretrain_nguni_byt5_%j.log
+#SBATCH --output=logs/test_eval_%j.log
+#SBATCH --error=logs/test_eval_%j.log
+#
+# 20-step trial with eval_steps=5 to check the validation loop
+# (--eval-input, eval_strategy="steps") runs correctly and eval_loss
+# shows up in metrics.jsonl / wandb, before trusting it on a real run.
 
 # Update to latest commit
 git pull
@@ -36,7 +40,10 @@ uv run accelerate launch \
     --mixed_precision bf16 \
     --main_process_port $((29500 + SLURM_JOB_ID % 1000)) \
     --module src.pretraining.continued_pretrain \
-    --model-config configs/models/nguni-byt5.yaml \
-    --input /scratch/rmdrak003/data/preprocessed/nguni-byt5 \
-    --eval-input /scratch/rmdrak003/data/preprocessed/nguni-byt5-validation \
-    --max-steps 10
+    --model-config configs/models/t5.yaml \
+    --input /scratch/rmdrak003/data/preprocessed/t5 \
+    --eval-input /scratch/rmdrak003/data/preprocessed/t5-validation \
+    --max-steps 20 \
+    --eval-steps 5 \
+    --batch-size 16 \
+    --gradient-accumulation-steps 64

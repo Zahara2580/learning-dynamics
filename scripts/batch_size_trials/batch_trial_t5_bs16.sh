@@ -2,12 +2,17 @@
 #SBATCH --account=l40sfree
 #SBATCH --partition=l40s
 #SBATCH --nodes=1 --ntasks=1 --gres=gpu:l40s:1
-#SBATCH --time=00:30:00
-#SBATCH --job-name="cpt-pretrain-nguni-byt5"
+#SBATCH --time=03:00:00
+#SBATCH --job-name="cpt-batch-t5-bs16"
 #SBATCH --mail-user=rmdrak003@myuct.ac.za
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --output=logs/pretrain_nguni_byt5_%j.log
-#SBATCH --error=logs/pretrain_nguni_byt5_%j.log
+#SBATCH --output=logs/batch_trial_t5_bs16_%j.log
+#SBATCH --error=logs/batch_trial_t5_bs16_%j.log
+#
+# Batch size trial for t5: per_device_batch_size=16,
+# gradient_accumulation_steps=64 (effective batch size 1024).
+# 200 steps with a 100-step warmup, to compare validation loss curves
+# across batch sizes 8/16/24 at a fixed effective batch size. --no-save is passed since these trials are only for loss/eval curves, not for keeping the model.
 
 # Update to latest commit
 git pull
@@ -36,7 +41,12 @@ uv run accelerate launch \
     --mixed_precision bf16 \
     --main_process_port $((29500 + SLURM_JOB_ID % 1000)) \
     --module src.pretraining.continued_pretrain \
-    --model-config configs/models/nguni-byt5.yaml \
-    --input /scratch/rmdrak003/data/preprocessed/nguni-byt5 \
-    --eval-input /scratch/rmdrak003/data/preprocessed/nguni-byt5-validation \
-    --max-steps 10
+    --model-config configs/models/t5.yaml \
+    --input /scratch/rmdrak003/data/preprocessed/t5 \
+    --eval-input /scratch/rmdrak003/data/preprocessed/t5-validation \
+    --max-steps 200 \
+    --warmup-steps 100 \
+    --batch-size 16 \
+    --gradient-accumulation-steps 64 \
+    --wandb-run-name t5-xho-bs16 \
+    --no-save
