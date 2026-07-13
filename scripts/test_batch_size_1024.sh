@@ -44,6 +44,6 @@ uv run accelerate launch \
     --model-config configs/models/t5.yaml \
     --input /scratch/rmdrak003/data/preprocessed/t5 \
     --max-steps 100 \
-    --batch-size 64 \
-    --gradient-accumulation-steps 16 \
+    --batch-size 32 \
+    --gradient-accumulation-steps 32 \
     --log-memory-every 10
