@@ -51,6 +51,7 @@ uv run accelerate launch \
     --max-steps 3 \
     --batch-size 10 \
     --gradient-accumulation-steps 102 \
+    --per_device_eval_batch_size 32 \
     --model-dtype bf16 \
     --wandb-run-name byt5-xho-fitcheck-bs10-bf16 \
     --metrics-filename metrics_fitcheck_byt5-bs10-bf16.jsonl \
