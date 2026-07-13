@@ -125,7 +125,8 @@ def create_sentinel_ids(mask_indices: np.ndarray, vocab_size: int) -> np.ndarray
     position" (handled by filter_input_ids).
 
     :param mask_indices: Boolean mask of shape (batch, length), True where corrupted.
-    :param vocab_size: Tokenizer vocabulary size (sentinels are the last ids in the vocab).
+    :param vocab_size: Sentinel base: sentinel ids count down from vocab_size - 1.
+        Usually len(tokenizer), but byt5 uses 259 (see DataCollatorForT5MLM).
     :return: Integer array of shape (batch, length): sentinel id at span starts, -1 elsewhere, 0 outside spans.
     """
     start_indices = mask_indices - np.roll(mask_indices, 1, axis=-1) * mask_indices
@@ -203,6 +204,13 @@ class DataCollatorForT5MLM:
     :param target_length: Final target length (from compute_input_and_target_lengths).
     :param pad_token_id: Tokenizer's pad token id.
     :param decoder_start_token_id: Model's decoder start token id.
+    :param sentinel_base: Sentinel ids count down from sentinel_base - 1.
+        None (default) means len(tokenizer): correct for t5, whose
+        <extra_id_*> tokens really are the trained sentinels, and for
+        nguni-byt5, whose MAFT trained the top-of-vocab ids as sentinels.
+        byt5 needs 259: the ByT5 paper reuses the final byte ids (258
+        down) as sentinels, and byt5's embedding rows above 258 were
+        never trained (using them gives worse-than-random loss).
     """
 
     def __init__(
@@ -214,6 +222,7 @@ class DataCollatorForT5MLM:
         target_length: int,
         pad_token_id: int,
         decoder_start_token_id: int,
+        sentinel_base: int | None = None,
     ):
         self.tokenizer = tokenizer
         self.noise_density = noise_density
@@ -222,6 +231,7 @@ class DataCollatorForT5MLM:
         self.target_length = target_length
         self.pad_token_id = pad_token_id
         self.decoder_start_token_id = decoder_start_token_id
+        self.sentinel_base = sentinel_base if sentinel_base is not None else len(tokenizer)
 
     def __call__(self, examples: list[dict[str, list[int]]]) -> dict[str, torch.Tensor]:
         """
@@ -239,8 +249,8 @@ class DataCollatorForT5MLM:
         ])
         labels_mask = ~mask_indices
 
-        input_ids_sentinel = create_sentinel_ids(mask_indices.astype(np.int8), len(self.tokenizer))
-        labels_sentinel = create_sentinel_ids(labels_mask.astype(np.int8), len(self.tokenizer))
+        input_ids_sentinel = create_sentinel_ids(mask_indices.astype(np.int8), self.sentinel_base)
+        labels_sentinel = create_sentinel_ids(labels_mask.astype(np.int8), self.sentinel_base)
 
         corrupted_input_ids = filter_input_ids(input_ids, input_ids_sentinel, self.tokenizer.eos_token_id)
         labels = filter_input_ids(input_ids, labels_sentinel, self.tokenizer.eos_token_id)

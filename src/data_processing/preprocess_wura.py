@@ -26,11 +26,12 @@ from transformers import AutoTokenizer, PreTrainedTokenizerBase, logging as hf_l
 from src.pretraining.collator import compute_input_and_target_lengths
 from src.pretraining.config import ModelConfig
 
-# T5's standard span-corruption hyperparameters. These must match the
-# values used by DataCollatorForT5MLM at training time, since they
+# Span-corruption noise density (shared by all models). The mean noise
+# span length is per-model (byt5 uses 20 per its paper; t5/nguni-byt5
+# use 3.0) and comes from the model config - it must match what
+# DataCollatorForT5MLM uses at training time, since together they
 # determine what chunk length preprocessing needs to produce.
 NOISE_DENSITY = 0.15
-MEAN_NOISE_SPAN_LENGTH = 3.0
 
 # Configure logging to show timestamps and log level
 logging.basicConfig(
@@ -173,9 +174,12 @@ def main() -> None:
     expanded_length, _ = compute_input_and_target_lengths(
         input_length=config.max_seq_length,
         noise_density=NOISE_DENSITY,
-        mean_noise_span_length=MEAN_NOISE_SPAN_LENGTH,
+        mean_noise_span_length=config.mean_noise_span_length,
     )
-    logger.info(f"Chunking to expanded_length={expanded_length} (post-corruption target: {config.max_seq_length})")
+    logger.info(
+        f"Chunking to expanded_length={expanded_length} (post-corruption target: "
+        f"{config.max_seq_length}, mean_noise_span_length={config.mean_noise_span_length})"
+    )
 
     # Initialise the model's tokenizer. AutoTokenizer works identically
     # here whether the underlying model is T5 (subword), ByT5, or

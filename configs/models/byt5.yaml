@@ -2,6 +2,17 @@
 model_name_or_path: "google/byt5-large"
 max_seq_length: 512
 
+# Span Corruption (ByT5 paper conventions - differ from t5/nguni-byt5!)
+# byt5 pretrained with 20-byte mean spans and reuses the final byte ids
+# (258 counting down) as sentinels; its embedding rows above 258 were
+# never trained. Confirmed empirically (diagnose_byt5_sentinels.sh):
+# default collator settings gave loss 8.09 (worse than random), these
+# give 0.81. NOTE: changing mean_noise_span_length changes the
+# preprocessing chunk length - re-run preprocess_wura.py for byt5
+# train + validation after touching it.
+mean_noise_span_length: 20.0
+sentinel_base: 259
+
 # Training Configuration
 learning_rate: 1.0e-4
 per_device_batch_size: 8

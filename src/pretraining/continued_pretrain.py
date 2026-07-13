@@ -44,8 +44,9 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# mean_noise_span_length and sentinel_base are per-model settings
+# (byt5 differs from t5/nguni-byt5) and come from ModelConfig.
 NOISE_DENSITY = 0.15
-MEAN_NOISE_SPAN_LENGTH = 3.0
 
 
 class CustomCheckpointCallback(TrainerCallback):
@@ -282,19 +283,24 @@ def main() -> None:
     eval_dataset = load_from_disk(args.eval_input)
     logger.info(f"Loaded {len(eval_dataset):,} validation chunks.")
 
+    logger.info(
+        f"Span corruption: mean_noise_span_length={config.mean_noise_span_length}, "
+        f"sentinel_base={config.sentinel_base if config.sentinel_base is not None else f'len(tokenizer)={len(tokenizer)}'}"
+    )
     _, target_length = compute_input_and_target_lengths(
         input_length=config.max_seq_length,
         noise_density=NOISE_DENSITY,
-        mean_noise_span_length=MEAN_NOISE_SPAN_LENGTH,
+        mean_noise_span_length=config.mean_noise_span_length,
     )
     collator = DataCollatorForT5MLM(
         tokenizer=tokenizer,
         noise_density=NOISE_DENSITY,
-        mean_noise_span_length=MEAN_NOISE_SPAN_LENGTH,
+        mean_noise_span_length=config.mean_noise_span_length,
         input_length=config.max_seq_length,
         target_length=target_length,
         pad_token_id=tokenizer.pad_token_id,
         decoder_start_token_id=tokenizer.pad_token_id,
+        sentinel_base=config.sentinel_base,
     )
 
     # --max-steps overrides how many steps actually run (for quick tests)
