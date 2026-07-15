@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 
 import yaml
 
@@ -25,17 +25,9 @@ class ModelConfig:
         output_dir: Directory to save checkpoints to.
         wandb_project: Weights & Biases project name to log to.
         wandb_run_name: Weights & Biases run name.
-        mean_noise_span_length: Average corrupted-span length for span
-            corruption. 3.0 is the T5 default; the ByT5 paper uses 20
-            (bytes). Changing this changes the pre-corruption chunk
-            length, so the corpus must be re-preprocessed to match.
-        sentinel_base: Sentinel ids count down from sentinel_base - 1.
-            None means len(tokenizer), which lands on the trained
-            <extra_id_*> tokens for t5 and (empirically, see the
-            sentinel diagnostics) matches nguni-byt5's MAFT. byt5 needs
-            259 instead: the ByT5 paper reuses the final byte ids
-            (258 down) as sentinels, and byt5's rows above 258 were
-            never trained.
+        max_target_length: Maximum target sequence length for the
+            lafand-style pipeline's collator (targets are variable
+            length; longer ones are truncated to this).
     """
     model_name_or_path: str
     max_seq_length: int
@@ -47,8 +39,7 @@ class ModelConfig:
     gradient_accumulation_steps: int = 1
     wandb_project: str = ""
     wandb_run_name: str = ""
-    mean_noise_span_length: float = 3.0
-    sentinel_base: Optional[int] = None
+    max_target_length: int = 512
 
     def __post_init__(self) -> None:
         """Validate configuration values after construction."""
@@ -66,12 +57,8 @@ class ModelConfig:
             raise ValueError(f"total_steps must be positive, got {self.total_steps}")
         if self.warmup_steps < 0:
             raise ValueError(f"warmup_steps must be non-negative, got {self.warmup_steps}")
-        if self.mean_noise_span_length <= 0:
-            raise ValueError(
-                f"mean_noise_span_length must be positive, got {self.mean_noise_span_length}"
-            )
-        if self.sentinel_base is not None and self.sentinel_base <= 0:
-            raise ValueError(f"sentinel_base must be positive or None, got {self.sentinel_base}")
+        if self.max_target_length <= 0:
+            raise ValueError(f"max_target_length must be positive, got {self.max_target_length}")
 
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "ModelConfig":

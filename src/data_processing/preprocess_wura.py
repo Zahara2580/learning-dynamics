@@ -1,4 +1,8 @@
 """
+DEPRECATED (2026-07-15): retired in favor of the lab-mandated lafand-mt
+pipeline - see src/lafand_pretraining/export_wura_lines.py and
+lafand_preprocess.py. Kept for reference only.
+
 Tokenise and chunk the WURA corpus for continued pretraining (CPT) of
 a T5-family model (T5, ByT5, Nguni-ByT5).
 

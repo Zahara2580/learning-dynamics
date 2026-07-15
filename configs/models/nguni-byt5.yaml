@@ -1,6 +1,7 @@
 # Model Configuration
 model_name_or_path: "francois-meyer/nguni-byt5-large"
 max_seq_length: 512
+max_target_length: 512
 
 # Training Configuration
 learning_rate: 1.0e-4

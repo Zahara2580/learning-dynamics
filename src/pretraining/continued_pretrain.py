@@ -1,4 +1,9 @@
 """
+DEPRECATED (2026-07-15): retired in favor of the lab-mandated lafand-mt
+pipeline - see src/lafand_pretraining/continued_pretrain_lafand.py.
+This file no longer runs as-is (its sentinel_base/mean_noise_span_length
+config fields were removed from ModelConfig); kept for reference only.
+
 Continued pretraining (CPT) script for T5-family models (T5, ByT5,
 Nguni-ByT5), using T5-style span corruption via DataCollatorForT5MLM.
 
