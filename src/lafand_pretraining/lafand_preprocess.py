@@ -115,8 +115,16 @@ def parse_args() -> Namespace:
     parser.add_argument("--output-dir", type=str, required=True, help="Directory for {type_path}.source/.target files.")
     parser.add_argument("--type-path", type=str, default="train", choices=["train", "dev"], help="Output file prefix.")
     parser.add_argument("--max-line-tokens", type=int, default=512,
-                        help="Pre-truncate tokenized lines to this many tokens before masking, "
-                             "bounding masked-run count below the sentinel vocabulary limit.")
+                        help="Window size (tokens). Each passage is tokenized then split into "
+                             "consecutive windows of this length; each window is masked as its "
+                             "own example. This keeps all the text (no truncation of long "
+                             "passages) - the 'let HuggingFace split into equal-length "
+                             "sequences' step, done here so masking sees fixed-size windows "
+                             "within the sentinel-vocabulary limit.")
+    parser.add_argument("--drop-last-window", action="store_true",
+                        help="Drop each passage's final short window instead of keeping it. "
+                             "Off by default: short trailing windows are kept (still valid "
+                             "examples), so no text is discarded.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--limit", type=int, default=None, help="Only process the first N lines (for smoke tests).")
     return parser.parse_args()
@@ -158,31 +166,38 @@ def main() -> None:
     logger.info(f"Processing {len(lines):,} lines from {args.input_text}...")
 
     sources, targets = [], []
-    n_truncated, n_skipped, total_tokens = 0, 0, 0
+    n_passages, n_windows, n_skipped, total_tokens = 0, 0, 0, 0
+    W = args.max_line_tokens
     for line in tqdm(lines):
         line = line.strip()
         if not line:
             continue
+        n_passages += 1
         tokenized = tokenizer.encode(line)
-        if len(tokenized) > args.max_line_tokens:
-            tokenized = tokenized[: args.max_line_tokens]
-            n_truncated += 1
-        if len(tokenized) < 2:
-            n_skipped += 1
-            continue
-        total_tokens += len(tokenized)
 
-        source, target = add_noise(tokenized, sentinel_ids)
-        attempts = 1
-        while target[0] != first_sentinel and attempts < MAX_RESAMPLE_ATTEMPTS:
-            source, target = add_noise(tokenized, sentinel_ids)
-            attempts += 1
-        if target[0] != first_sentinel:
-            n_skipped += 1
-            continue
+        # Split the passage into consecutive fixed-size windows; each
+        # window becomes its own masked example, so long passages keep
+        # all their text instead of being truncated.
+        for start in range(0, len(tokenized), W):
+            window = tokenized[start:start + W]
+            # Drop a too-short final window (nothing to mask) or, if
+            # requested, any final window shorter than W.
+            if len(window) < 2 or (args.drop_last_window and len(window) < W):
+                continue
+            total_tokens += len(window)
 
-        sources.append(" ".join(map(str, source)).strip() + "\n")
-        targets.append(" ".join(map(str, target)).strip() + "\n")
+            source, target = add_noise(window, sentinel_ids)
+            attempts = 1
+            while target[0] != first_sentinel and attempts < MAX_RESAMPLE_ATTEMPTS:
+                source, target = add_noise(window, sentinel_ids)
+                attempts += 1
+            if target[0] != first_sentinel:
+                n_skipped += 1
+                continue
+
+            sources.append(" ".join(map(str, source)).strip() + "\n")
+            targets.append(" ".join(map(str, target)).strip() + "\n")
+            n_windows += 1
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -192,9 +207,10 @@ def main() -> None:
         f.writelines(targets)
 
     logger.info(
-        f"Wrote {len(sources):,} examples to {output_dir}/{args.type_path}.source/.target "
-        f"(mean {total_tokens / max(len(sources), 1):.0f} tokens/line; "
-        f"{n_truncated:,} lines truncated to {args.max_line_tokens} tokens; {n_skipped:,} skipped)."
+        f"Wrote {n_windows:,} window-examples from {n_passages:,} passages to "
+        f"{output_dir}/{args.type_path}.source/.target "
+        f"(mean {total_tokens / max(n_windows, 1):.0f} tokens/window; "
+        f"{n_windows / max(n_passages, 1):.2f} windows/passage; {n_skipped:,} skipped)."
     )
 
 
