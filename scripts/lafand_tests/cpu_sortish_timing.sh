@@ -22,8 +22,8 @@ run_one () {
         --model-config configs/models/byt5.yaml \
         --data-dir /scratch/rmdrak003/data/lafand/byt5 \
         --model-dtype fp32 \
-        --max-steps 6 --warmup-steps 6 \
-        --batch-size 4 --gradient-accumulation-steps 2 \
+        --max-steps 3 --warmup-steps 3 \
+        --batch-size 2 --gradient-accumulation-steps 1 \
         --eval-steps 999 --n-eval-obs 4 \
         --ignore-pad-in-labels \
         --wandb-run-name byt5-lafand-${name} \
