@@ -63,5 +63,6 @@ uv run accelerate launch \
     --wandb-run-name nguni-byt5-xho-lafand-bs4 \
     --metrics-filename metrics_nguni-byt5_lafand_bs4.jsonl \
     --run-subdir lafand-bs4 \
+    --sortish-sampler \
     --ignore-pad-in-labels \
     --resume

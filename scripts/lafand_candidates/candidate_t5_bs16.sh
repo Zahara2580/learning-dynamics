@@ -63,5 +63,6 @@ uv run accelerate launch \
     --wandb-run-name t5-xho-lafand-bs16 \
     --metrics-filename metrics_t5_lafand_bs16.jsonl \
     --run-subdir lafand-bs16 \
+    --sortish-sampler \
     --ignore-pad-in-labels \
     --resume

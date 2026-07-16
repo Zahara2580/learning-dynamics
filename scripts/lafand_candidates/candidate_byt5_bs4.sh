@@ -63,5 +63,6 @@ uv run accelerate launch \
     --wandb-run-name byt5-xho-lafand-bs4 \
     --metrics-filename metrics_byt5_lafand_bs4.jsonl \
     --run-subdir lafand-bs4 \
+    --sortish-sampler \
     --ignore-pad-in-labels \
     --resume

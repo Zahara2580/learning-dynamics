@@ -54,18 +54,30 @@ def parse_args() -> Namespace:
         choices=SUPPORTED_LANGUAGES,
         help="WURA language subset to download. Default: xho (isiXhosa)."
     )
+    parser.add_argument(
+        "--level",
+        type=str,
+        default="passage",
+        choices=["document", "passage"],
+        help="WURA granularity. passage (default): WURA's own pre-split text "
+             "passages (id/text) - what the lafand CPT pipeline consumes, per "
+             "supervisor guidance. document: full articles (headline/content), "
+             "kept only for re-downloading the reference corpus."
+    )
     return parser.parse_args()
 
 
-def load_wura(language: str, cache_dir: Optional[str] = None) -> DatasetDict:
+def load_wura(language: str, cache_dir: Optional[str] = None, level: str = "document") -> DatasetDict:
     """
     Load the given WURA language dataset from HuggingFace.
 
     :param language: WURA language subset to download.
     :param cache_dir: Path to the HuggingFace cache directory.
+    :param level: "document" (headline/content articles) or "passage"
+        (WURA's own pre-split passages, features id/text).
     :return: Dataset with 'train' and 'validation' splits.
     """
-    logger.info(f"Loading {DATASET_NAME} ({language})...")
+    logger.info(f"Loading {DATASET_NAME} ({language}, level={level})...")
 
     # Try to get an HF token (from .env / huggingface-cli login).
 
@@ -82,6 +94,7 @@ def load_wura(language: str, cache_dir: Optional[str] = None) -> DatasetDict:
     dataset = cast(DatasetDict, load_dataset(
         path=DATASET_NAME,
         name=language,
+        level=level,
         trust_remote_code=True,
         cache_dir=cache_dir,
         token=token,
@@ -122,9 +135,11 @@ def main() -> None:
     cache_dir = args.cache_dir or os.environ.get("HF_DATASETS_CACHE")
 
 
-    output_dir = os.path.join(args.output_dir, args.language)
+    # passage-level saves alongside (not over) the document-level corpus
+    suffix = args.language if args.level == "document" else f"{args.language}-passage"
+    output_dir = os.path.join(args.output_dir, suffix)
 
-    dataset = load_wura(language=args.language, cache_dir=cache_dir)
+    dataset = load_wura(language=args.language, cache_dir=cache_dir, level=args.level)
     log_dataset_info(dataset)
     save_dataset(dataset, output_dir)
 
