@@ -249,6 +249,13 @@ def main() -> None:
 
     training_args = Seq2SeqTrainingArguments(
         output_dir=str(resume_checkpoint_dir),
+        # Our dataset yields src_texts/tgt_texts/id staging keys for the
+        # collator, not model-forward args; modern Trainer wraps the
+        # collator with RemoveColumnsCollator and strips them unless this
+        # is off. (transformers 4.10, which lafand ran, only stripped
+        # columns from datasets.Dataset objects - plain torch Datasets
+        # passed through - so False here matches their actual behavior.)
+        remove_unused_columns=False,
         learning_rate=config.learning_rate,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
