@@ -22,11 +22,13 @@ Faithfulness notes:
 """
 
 import linecache
+import random
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 
+import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 
 
 class LafandSeq2SeqDataset(Dataset):
@@ -51,6 +53,48 @@ class LafandSeq2SeqDataset(Dataset):
         assert source_line, f"empty source line for index {index}"
         assert tgt_line, f"empty tgt line for index {index}"
         return {"tgt_texts": tgt_line, "src_texts": source_line, "id": index - 1}
+
+
+def sortish_sampler_indices(data: List[int], bs: int, shuffle: bool = True) -> np.ndarray:
+    """Port of lafand util.py's sortish_sampler_indices (fastai-derived):
+    'Go through the text data by order of src length with a bit of
+    randomness.' Shuffles, sorts within windows of bs*50 by length
+    descending, cuts into bs-sized batches, puts the longest batch first
+    (so an OOM surfaces immediately), and shuffles the remaining batch
+    order. Two mechanical fixes vs the original: np.int (removed from
+    modern numpy) and a ragged-array np.random.permutation call replaced
+    with an equivalent python-level shuffle."""
+    if not shuffle:
+        return np.argsort(np.array(data) * -1)
+
+    idxs = np.random.permutation(len(data))
+    sz = bs * 50
+    ck_idx = [idxs[i:i + sz] for i in range(0, len(idxs), sz)]
+    sort_idx = np.concatenate([sorted(s, key=lambda i: data[i], reverse=True) for s in ck_idx])
+    sz = bs
+    ck_idx = [sort_idx[i:i + sz] for i in range(0, len(sort_idx), sz)]
+    max_ck = int(np.argmax([data[ck[0]] for ck in ck_idx]))  # batch with the longest first element
+    ck_idx[0], ck_idx[max_ck] = ck_idx[max_ck], ck_idx[0]    # goes first
+    rest = ck_idx[1:]
+    random.shuffle(rest)
+    return np.concatenate([ck_idx[0]] + rest) if rest else np.asarray(ck_idx[0])
+
+
+class SortishSampler(Sampler):
+    """Port of lafand util.py's SortishSampler: yields example indices so
+    that consecutive batches contain similar-length examples, collapsing
+    pad-to-batch-max waste. Present in the lafand repo but left disabled
+    by their launch script - enable via --sortish-sampler (off by default
+    pending supervisor sign-off)."""
+
+    def __init__(self, data: List[int], batch_size: int, shuffle: bool = True):
+        self.data, self.bs, self.shuffle = data, batch_size, shuffle
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __iter__(self):
+        return iter(sortish_sampler_indices(self.data, self.bs, shuffle=self.shuffle))
 
 
 class LafandSeq2SeqCollator:

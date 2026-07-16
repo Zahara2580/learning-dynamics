@@ -34,7 +34,7 @@ from transformers import (
     TrainerState,
 )
 
-from src.lafand_pretraining.lafand_data import LafandSeq2SeqCollator, LafandSeq2SeqDataset
+from src.lafand_pretraining.lafand_data import LafandSeq2SeqCollator, LafandSeq2SeqDataset, SortishSampler
 from src.pretraining.config import ModelConfig
 from src.pretraining.resume import find_latest_checkpoint
 from src.pretraining.schedule import CheckpointScheduleConfig, compute_checkpoint_steps
@@ -43,6 +43,25 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+
+class LafandTrainer(Seq2SeqTrainer):
+    """Seq2SeqTrainer with optional length-grouped batching via the
+    SortishSampler ported from the lafand repo's own util.py (their
+    launch script had it disabled; --sortish-sampler enables it here).
+    Each optimizer step still accumulates many micro-batches spanning
+    multiple sorted windows, so gradient diversity per update is
+    largely preserved - only within-micro-batch lengths are grouped."""
+
+    def __init__(self, *args, use_sortish_sampler: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.use_sortish_sampler = use_sortish_sampler
+
+    def _get_train_sampler(self, train_dataset=None):
+        dataset = train_dataset if train_dataset is not None else self.train_dataset
+        if self.use_sortish_sampler and dataset is not None and hasattr(dataset, "src_lens"):
+            return SortishSampler(dataset.src_lens, self.args.per_device_train_batch_size, shuffle=True)
+        return super()._get_train_sampler(train_dataset)
 
 
 class CustomCheckpointCallback(TrainerCallback):
@@ -57,9 +76,10 @@ class CustomCheckpointCallback(TrainerCallback):
     full state at all ~19 schedule steps would waste a lot of disk.
     """
 
-    def __init__(self, checkpoint_steps: list[int], save_dir: Path):
+    def __init__(self, checkpoint_steps: list[int], save_dir: Path, tokenizer=None):
         self.checkpoint_steps = set(checkpoint_steps)
         self.save_dir = save_dir
+        self.tokenizer = tokenizer
 
     def on_step_end(
         self, args, state: TrainerState, control: TrainerControl, **kwargs
@@ -74,6 +94,11 @@ class CustomCheckpointCallback(TrainerCallback):
                 # mutated mid-training - only the on-disk snapshot is bf16.
                 bf16_state_dict = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
                 model.save_pretrained(checkpoint_path, state_dict=bf16_state_dict)
+                # Save the tokenizer too, so each checkpoint is a fully
+                # self-contained model dir that finetuning can point at
+                # directly (no need to know the base model name).
+                if self.tokenizer is not None:
+                    self.tokenizer.save_pretrained(checkpoint_path)
                 logger.info(f"Saved weights-only schedule checkpoint (bf16): {checkpoint_path}")
         return control
 
@@ -160,6 +185,15 @@ def parse_args() -> Namespace:
                         help="Override the wandb_run_name from the config.")
     parser.add_argument("--model-dtype", type=str, choices=["bf16", "fp32"], default="bf16",
                         help="Dtype to load and train the model in.")
+    parser.add_argument(
+        "--sortish-sampler",
+        action="store_true",
+        help="Enable the SortishSampler ported from the lafand repo's util.py "
+             "(length-grouped batching; collapses pad-to-batch-max waste, "
+             "measured ~2-3x throughput on our length distribution). Their "
+             "launch script had it disabled - off by default pending "
+             "supervisor sign-off.",
+    )
     parser.add_argument(
         "--ignore-pad-in-labels",
         action="store_true",
@@ -284,18 +318,23 @@ def main() -> None:
         GPUMemoryLoggingCallback(log_every=args.log_memory_every),
     ]
     if not args.no_save:
-        callbacks.append(CustomCheckpointCallback(checkpoint_steps, save_dir=schedule_checkpoint_dir))
+        callbacks.append(
+            CustomCheckpointCallback(checkpoint_steps, save_dir=schedule_checkpoint_dir, tokenizer=tokenizer)
+        )
     if early_stopping_enabled:
         callbacks.append(EarlyStoppingCallback(early_stopping_patience=args.early_stopping_patience))
         logger.info(f"Early stopping enabled: patience={args.early_stopping_patience} evaluations on eval_loss")
 
-    trainer = Seq2SeqTrainer(
+    if args.sortish_sampler:
+        logger.info("SortishSampler ENABLED (length-grouped batching, from lafand util.py)")
+    trainer = LafandTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset,
         eval_dataset=eval_dataset,
         data_collator=collator,
         callbacks=callbacks,
+        use_sortish_sampler=args.sortish_sampler,
     )
 
     logger.info("Starting training")
