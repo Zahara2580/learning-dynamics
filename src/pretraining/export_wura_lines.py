@@ -13,8 +13,8 @@ left to the HuggingFace collator/Trainer downstream.
 The only filtering is a minimum length (empty/near-empty lines crash
 the lafand data loader and produce degenerate masking examples).
 
-    uv run python3 -m src.lafand_pretraining.export_wura_lines --input /scratch/rmdrak003/data/corpus/xho-passage --split train --output /scratch/rmdrak003/data/lafand/lines-passage/train.xh
-    uv run python3 -m src.lafand_pretraining.export_wura_lines --input /scratch/rmdrak003/data/corpus/xho-passage --split validation --output /scratch/rmdrak003/data/lafand/lines-passage/dev.xh
+    uv run python3 -m src.pretraining.export_wura_lines --input /scratch/rmdrak003/data/corpus/xho-passage --split train --output /scratch/rmdrak003/data/lafand/lines-passage/train.xh
+    uv run python3 -m src.pretraining.export_wura_lines --input /scratch/rmdrak003/data/corpus/xho-passage --split validation --output /scratch/rmdrak003/data/lafand/lines-passage/dev.xh
 """
 
 import argparse

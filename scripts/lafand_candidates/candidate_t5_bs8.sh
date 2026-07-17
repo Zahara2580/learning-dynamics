@@ -18,8 +18,8 @@
 # CHAIN_JOBS defaults to 0 (single 24h job). To chain the WINNER to
 # completion: sbatch --export=ALL,CHAIN_JOBS=6 <this script>
 #
-# Padding mode is faithful (pad-in-loss) unless --ignore-pad-in-labels
-# is added below - settle via the padding A/B before submitting.
+# Label padding is always -100 (excluded from loss) - decided via the
+# padding A/B and confirmed by supervisor.
 
 # Update to latest commit
 git pull
@@ -52,7 +52,7 @@ uv run accelerate launch \
     --num_processes ${SLURM_GPUS_ON_NODE:-1} \
     --mixed_precision bf16 \
     --main_process_port $((29500 + SLURM_JOB_ID % 1000)) \
-    --module src.lafand_pretraining.continued_pretrain_lafand \
+    --module src.pretraining.continued_pretrain_lafand \
     --model-config configs/models/t5.yaml \
     --data-dir /scratch/rmdrak003/data/lafand/t5 \
     --batch-size 8 \
@@ -64,5 +64,4 @@ uv run accelerate launch \
     --metrics-filename metrics_t5_lafand_bs8.jsonl \
     --run-subdir lafand-bs8 \
     --sortish-sampler \
-    --ignore-pad-in-labels \
     --resume

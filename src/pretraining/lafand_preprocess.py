@@ -32,8 +32,8 @@ Sanctioned adaptations (each per the repo's own README or necessary):
     (identical values, just faster)
 
 Usage (once per model per split):
-    uv run python3 -m src.lafand_pretraining.lafand_preprocess --input-text /scratch/rmdrak003/data/lafand/lines/train.xh --model-config configs/models/byt5.yaml --output-dir /scratch/rmdrak003/data/lafand/byt5 --type-path train
-    uv run python3 -m src.lafand_pretraining.lafand_preprocess --input-text /scratch/rmdrak003/data/lafand/lines/dev.xh --model-config configs/models/byt5.yaml --output-dir /scratch/rmdrak003/data/lafand/byt5 --type-path dev
+    uv run python3 -m src.pretraining.lafand_preprocess --input-text /scratch/rmdrak003/data/lafand/lines/train.xh --model-config configs/models/byt5.yaml --output-dir /scratch/rmdrak003/data/lafand/byt5 --type-path train
+    uv run python3 -m src.pretraining.lafand_preprocess --input-text /scratch/rmdrak003/data/lafand/lines/dev.xh --model-config configs/models/byt5.yaml --output-dir /scratch/rmdrak003/data/lafand/byt5 --type-path dev
 """
 
 import argparse

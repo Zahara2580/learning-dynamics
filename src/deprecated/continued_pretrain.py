@@ -1,6 +1,6 @@
 """
 DEPRECATED (2026-07-15): retired in favor of the lab-mandated lafand-mt
-pipeline - see src/lafand_pretraining/continued_pretrain_lafand.py.
+pipeline - see src/pretraining/continued_pretrain_lafand.py.
 This file no longer runs as-is (its sentinel_base/mean_noise_span_length
 config fields were removed from ModelConfig); kept for reference only.
 

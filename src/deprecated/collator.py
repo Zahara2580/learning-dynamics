@@ -1,6 +1,6 @@
 """
 DEPRECATED (2026-07-15): retired in favor of the lab-mandated lafand-mt
-pipeline (offline i.i.d. masking) - see src/lafand_pretraining/. Kept
+pipeline (offline i.i.d. masking) - see src/pretraining/. Kept
 for reference and for the historical diagnostic scripts that import it.
 
 Data collator for T5-style span corruption, used during continued

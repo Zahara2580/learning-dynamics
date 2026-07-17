@@ -1,6 +1,6 @@
 """
 DEPRECATED (2026-07-15): retired in favor of the lab-mandated lafand-mt
-pipeline - see src/lafand_pretraining/export_wura_lines.py and
+pipeline - see src/pretraining/export_wura_lines.py and
 lafand_preprocess.py. Kept for reference only.
 
 Tokenise and chunk the WURA corpus for continued pretraining (CPT) of

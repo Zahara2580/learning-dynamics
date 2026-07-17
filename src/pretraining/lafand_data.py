@@ -10,13 +10,14 @@ parses the ids back, truncates to max lengths, and pads to the longest
 sequence in the batch.
 
 Faithfulness notes:
-  - labels are padded with pad_token_id (0), NOT -100, exactly as the
-    original does - padding therefore contributes to the loss, as it did
-    for nguni-byt5's own training. Set ignore_pad_in_labels=True to pad
-    with -100 instead (documented deviation, off by default).
+  - labels are padded with -100 so padding is EXCLUDED from the loss.
+    This deviates from the original (which pads labels with pad_token_id,
+    silently including padding in the loss); the supervisor confirmed the
+    intended behavior is padding-ignored, and a measured A/B (t5 eval
+    3.53 vs 9.03) showed the original behavior just dilutes the loss.
   - truncation happens here, after masking (original behavior): a
     truncated example can lose target spans whose sentinels survive in
-    the input. lafand_preprocess.py's pre-truncation keeps this rare.
+    the input. lafand_preprocess.py's windowing keeps this rare.
   - no decoder_input_ids are built; T5 derives them from labels
     internally, as in the original.
 """
@@ -102,20 +103,20 @@ class LafandSeq2SeqCollator:
     branch: parse space-separated id strings, truncate to max lengths,
     pad to the longest sequence in the batch."""
 
+    # Labels are always padded with -100 (excluded from the loss) - see
+    # module docstring for why this deviates from the original.
+    LABEL_PAD_ID = -100
+
     def __init__(
         self,
         pad_token_id: int,
         max_source_length: int,
         max_target_length: int,
-        ignore_pad_in_labels: bool = False,
     ):
         assert pad_token_id is not None, "pad_token_id must be defined"
         self.pad_token_id = pad_token_id
         self.max_source_length = max_source_length
         self.max_target_length = max_target_length
-        # -100 label padding is a deviation from the original (which pads
-        # labels with pad_token_id, so padding contributes to the loss).
-        self.label_pad_id = -100 if ignore_pad_in_labels else pad_token_id
 
     def __call__(self, batch) -> Dict[str, torch.Tensor]:
         sources = [x["src_texts"] for x in batch]
@@ -139,7 +140,7 @@ class LafandSeq2SeqCollator:
         if max_len > self.max_target_length:
             max_len = self.max_target_length
         labels = [
-            i[:max_len] if len(i) > max_len else i + [self.label_pad_id] * (max_len - len(i))
+            i[:max_len] if len(i) > max_len else i + [self.LABEL_PAD_ID] * (max_len - len(i))
             for i in labels
         ]
 

@@ -10,8 +10,8 @@ logging, dtype handling) is carried over unchanged from the previous
 trainer; only the data pipeline differs.
 
 Usage:
-    uv run python3 -m src.lafand_pretraining.continued_pretrain_lafand --model-config configs/models/t5.yaml --data-dir /scratch/rmdrak003/data/lafand/t5
-    uv run python3 -m src.lafand_pretraining.continued_pretrain_lafand --model-config configs/models/t5.yaml --data-dir /scratch/rmdrak003/data/lafand/t5 --resume
+    uv run python3 -m src.pretraining.continued_pretrain_lafand --model-config configs/models/t5.yaml --data-dir /scratch/rmdrak003/data/lafand/t5
+    uv run python3 -m src.pretraining.continued_pretrain_lafand --model-config configs/models/t5.yaml --data-dir /scratch/rmdrak003/data/lafand/t5 --resume
 """
 
 import argparse
@@ -34,7 +34,7 @@ from transformers import (
     TrainerState,
 )
 
-from src.lafand_pretraining.lafand_data import LafandSeq2SeqCollator, LafandSeq2SeqDataset, SortishSampler
+from src.pretraining.lafand_data import LafandSeq2SeqCollator, LafandSeq2SeqDataset, SortishSampler
 from src.pretraining.config import ModelConfig
 from src.pretraining.resume import find_latest_checkpoint
 from src.pretraining.schedule import CheckpointScheduleConfig, compute_checkpoint_steps
@@ -194,13 +194,6 @@ def parse_args() -> Namespace:
              "launch script had it disabled - off by default pending "
              "supervisor sign-off.",
     )
-    parser.add_argument(
-        "--ignore-pad-in-labels",
-        action="store_true",
-        help="Pad labels with -100 (excluded from loss) instead of the faithful lafand "
-             "behavior of padding with pad_token_id (which contributes to the loss, as it "
-             "did for nguni-byt5's own training). Off by default = faithful.",
-    )
     parser.add_argument("--early-stopping-patience", type=int, default=None,
                         help="If set, stop when eval_loss hasn't improved for this many evaluations.")
     return parser.parse_args()
@@ -252,12 +245,11 @@ def main() -> None:
         pad_token_id=tokenizer.pad_token_id,
         max_source_length=config.max_seq_length,
         max_target_length=config.max_target_length,
-        ignore_pad_in_labels=args.ignore_pad_in_labels,
     )
     logger.info(
         f"Collator: max_source_length={config.max_seq_length}, "
         f"max_target_length={config.max_target_length}, "
-        f"label padding={'-100 (excluded from loss)' if args.ignore_pad_in_labels else 'pad_token_id (faithful lafand behavior)'}"
+        f"label padding=-100 (excluded from loss)"
     )
 
     actual_max_steps = args.max_steps if args.max_steps is not None else config.total_steps
