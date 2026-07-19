@@ -2,7 +2,7 @@
 #SBATCH --account=l40sfree
 #SBATCH --partition=l40s
 #SBATCH --nodes=1 --ntasks=1 --gres=gpu:l40s:1
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --job-name="cpt-lafand-byt5-bs4"
 #SBATCH --mail-user=rmdrak003@myuct.ac.za
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -15,8 +15,9 @@
 # eval curves across candidates at ~step 1000 on wandb, keep the winner
 # (its steps already count toward the 10k), scancel the others.
 #
-# CHAIN_JOBS defaults to 0 (single 24h job). To chain the WINNER to
-# completion: sbatch --export=ALL,CHAIN_JOBS=6 <this script>
+# WINNER (byte-model sweep, decided at step ~1400: eval curves
+# indistinguishable from bs8, bs4 ~13% faster). Now runs as 48h links;
+# chain to completion with: sbatch --export=ALL,CHAIN_JOBS=2 <this script>
 #
 # Label padding is always -100 (excluded from loss) - decided via the
 # padding A/B and confirmed by supervisor.
