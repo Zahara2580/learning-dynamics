@@ -2,7 +2,7 @@
 #SBATCH --account=l40sfree
 #SBATCH --partition=l40s
 #SBATCH --nodes=1 --ntasks=1 --gres=gpu:l40s:1
-#SBATCH --time=48:00:00
+#SBATCH --time=06:00:00
 #SBATCH --job-name="cpt-lafand-t5-bs8"
 #SBATCH --mail-user=rmdrak003@myuct.ac.za
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -18,8 +18,9 @@
 # WINNER (t5 sweep, decided at step ~3000: eval curves of bs4/bs8/bs16
 # within 0.02 of each other and inside one eval-interval's improvement;
 # bs8 had the highest measured steps/hour and the lowest eval loss of
-# the two fast configs). Now runs as 48h links; chain to completion
-# with: sbatch --export=ALL,CHAIN_JOBS=1 <this script>
+# the two fast configs). Runs as 6h links - short jobs are allocated
+# much faster on the congested l40sfree queue than 48h ones. Chain more
+# links if needed: sbatch --export=ALL,CHAIN_JOBS=N <this script>
 #
 # Label padding is always -100 (excluded from loss) - decided via the
 # padding A/B and confirmed by supervisor.
