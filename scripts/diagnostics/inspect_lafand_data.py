@@ -79,11 +79,22 @@ def main() -> None:
         # should recover the original passage in order.
         src_sent = [t for t in src_ids if t in sentinel_set]
         tgt_sent = [t for t in tgt_ids if t in sentinel_set]
-        print(f"\n[CHECK] sentinels in source: {len(src_sent)}, in target: {len(tgt_sent)}")
+        # Source and target are COMPLEMENTS: source gets one sentinel per
+        # masked run, target one per unmasked run. Their counts differ by
+        # at most 1 depending on whether the window ends masked or not -
+        # equal counts is NOT the invariant. What must hold is that each
+        # side's sentinels are the first-N in order (so <extra_id_k> in
+        # the source refers to the same gap as <extra_id_k> in the target).
+        print(f"\n[CHECK] sentinels in source: {len(src_sent)}, in target: {len(tgt_sent)} "
+              f"(complementary; differ by <=1 by construction)")
         print(f"[CHECK] target starts with first sentinel ({first_sentinel})? "
               f"{'YES' if tgt_ids and tgt_ids[0] == first_sentinel else 'NO  <-- PROBLEM'}")
-        print(f"[CHECK] source/target sentinel sequences identical? "
-              f"{'YES' if src_sent == tgt_sent else 'NO  <-- PROBLEM'}")
+        print(f"[CHECK] counts differ by <= 1? "
+              f"{'YES' if abs(len(src_sent) - len(tgt_sent)) <= 1 else 'NO  <-- PROBLEM'}")
+        print(f"[CHECK] source sentinels are first-{len(src_sent)} in order? "
+              f"{'YES' if src_sent == sentinel_ids[:len(src_sent)] else 'NO  <-- PROBLEM'}")
+        print(f"[CHECK] target sentinels are first-{len(tgt_sent)} in order? "
+              f"{'YES' if tgt_sent == sentinel_ids[:len(tgt_sent)] else 'NO  <-- PROBLEM'}")
 
     # ---------- structural checks over many examples ----------
     n_check = min(args.n_check, len(sources))
@@ -105,7 +116,11 @@ def main() -> None:
         n_sentinels.append(len(s_sent))
         if tgt_ids[0] != first_sentinel:
             bad_first += 1
-        if s_sent != t_sent:
+        # Correct invariant: each side uses the first-N sentinels in order,
+        # and the two counts are complementary (differ by at most 1).
+        if (s_sent != sentinel_ids[:len(s_sent)]
+                or t_sent != sentinel_ids[:len(t_sent)]
+                or abs(len(s_sent) - len(t_sent)) > 1):
             bad_align += 1
         if len(src_ids) > config.max_seq_length or len(tgt_ids) > config.max_target_length:
             oversized += 1
@@ -115,7 +130,7 @@ def main() -> None:
     print(f"\n{'=' * 78}\nSTRUCTURAL CHECKS over {n_check:,} examples\n{'=' * 78}")
     print(f"empty examples                        : {empty}          {'OK' if empty == 0 else '<-- PROBLEM'}")
     print(f"target not starting with 1st sentinel : {bad_first}          {'OK' if bad_first == 0 else '<-- PROBLEM'}")
-    print(f"source/target sentinel misalignment   : {bad_align}          {'OK' if bad_align == 0 else '<-- PROBLEM'}")
+    print(f"sentinel numbering broken             : {bad_align}          {'OK' if bad_align == 0 else '<-- PROBLEM'}")
     print(f"token ids outside vocab (0..{vocab_size-1})   : {out_of_range}          {'OK' if out_of_range == 0 else '<-- PROBLEM'}")
     print(f"examples longer than max_seq_length   : {oversized}          "
           f"{'OK' if oversized == 0 else '(will be truncated by collator)'}")
