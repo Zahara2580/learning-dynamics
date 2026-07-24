@@ -10,11 +10,14 @@ Hyperparameters come from Meyer et al. (2024) / NGLUEni and are not tuned.
 
 import hashlib
 import json
+import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Union
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -49,6 +52,9 @@ class FinetuneConfig:
             specifies one.
         direction_prefix: MT-only direction tag, e.g.
             "Translate English to Xhosa: ". Ignored for T2X.
+        n_train_pairs: MT only: number of WMT22 pairs used for training,
+            selected by the dedupe-then-top-N-by-laser_score rule in
+            load_mt_train. 0 = unused (t2x).
         work_dir: Scratch directory for transient finetuned weights.
             Everything under here is deleted after scoring.
         results_dir: Permanent directory for results.jsonl + predictions.
@@ -67,6 +73,7 @@ class FinetuneConfig:
     max_new_tokens: int = 256
     source_prefix: str = ""
     direction_prefix: str = ""
+    n_train_pairs: int = 0
     work_dir: str = "/scratch/rmdrak003/finetune_work"
     results_dir: str = "results/finetune"
 
@@ -92,6 +99,10 @@ class FinetuneConfig:
             raise ValueError(f"num_beams must be positive, got {self.num_beams}")
         if self.max_new_tokens <= 0:
             raise ValueError(f"max_new_tokens must be positive, got {self.max_new_tokens}")
+        if self.task == "mt" and self.n_train_pairs <= 0:
+            raise ValueError(
+                f"mt task requires n_train_pairs > 0, got {self.n_train_pairs}"
+            )
 
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "FinetuneConfig":
@@ -108,6 +119,9 @@ class FinetuneConfig:
             data = yaml.safe_load(f)
 
         known_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        dropped = set(data) - known_fields
+        if dropped:
+            logger.warning(f"ignoring unknown config keys: {sorted(dropped)}")
         filtered = {k: v for k, v in data.items() if k in known_fields}
         return cls(**filtered)
 

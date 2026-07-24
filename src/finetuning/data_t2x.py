@@ -32,7 +32,7 @@ def load_t2x_split(
     :param data_dir: Directory containing {split}.data and {split}.text.
     :param split: One of "train", "valid", "test".
     :return: (inputs, references) where references[i] is the list of
-        1-3 acceptable outputs for inputs[i].
+        1-8 (most have 1-3) acceptable outputs for inputs[i].
     """
     data_dir = Path(data_dir)
     data_lines = (data_dir / f"{split}.data").read_text(encoding="utf-8").splitlines()

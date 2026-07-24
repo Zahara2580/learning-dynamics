@@ -32,5 +32,9 @@ max_new_tokens: 384
 source_prefix: ""
 direction_prefix: "Translate English to Xhosa: "
 
+# WMT22 pairs used for training: dedupe exact pairs, take top-N by
+# laser_score. Raisable later if MT needs more data (per supervisor).
+n_train_pairs: 10000
+
 work_dir: "/scratch/rmdrak003/finetune_work"
 results_dir: "results/finetune"

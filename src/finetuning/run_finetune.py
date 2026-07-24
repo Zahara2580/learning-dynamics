@@ -51,6 +51,7 @@ from src.finetuning.data_mt import (
 )
 from src.finetuning.data_t2x import build_training_pairs, load_t2x_split
 from src.finetuning.metrics import score_corpus
+from src.finetuning.predictions_io import write_predictions
 from src.pretraining.config import ModelConfig
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -217,7 +218,8 @@ def load_task_data(cfg: FinetuneConfig) -> dict:
 
     Both tasks return the same shapes so the harness below is task
     agnostic: sources are plain strings, references are lists of lists
-    (T2X test sentences have 1-3 references, FLORES always has 1).
+    (T2X test sentences have 1-8 (most have 1-3) references, FLORES
+    always has 1).
 
     :param cfg: Finetune configuration.
     :return: Dict with train/val sources+targets and test sources+references.
@@ -445,11 +447,12 @@ def run_one_checkpoint(
     }
 
     # Predictions are permanent: every metric in the thesis can be
-    # recomputed from these without re-running a single GPU hour.
+    # recomputed from these without re-running a single GPU hour. JSONL,
+    # not newline-joined text - byte models can emit newlines.
     pred_dir = Path(cfg.results_dir) / "predictions"
     pred_dir.mkdir(parents=True, exist_ok=True)
-    pred_path = pred_dir / f"{model_name}_{step}_{cfg.task}_{seed}.txt"
-    pred_path.write_text("\n".join(predictions) + "\n", encoding="utf-8")
+    pred_path = pred_dir / f"{model_name}_{step}_{cfg.task}_{seed}.jsonl"
+    write_predictions(pred_path, predictions)
 
     # Weights are transient. ~5GB per run, ~120 runs.
     del trainer, model, optimizer, scheduler
