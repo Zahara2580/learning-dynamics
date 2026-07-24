@@ -1,0 +1,36 @@
+# Machine translation (en -> xh) finetuning protocol.
+#
+# Hyperparameters from NGLUEni (Meyer et al. 2024) section "MT
+# experiments", which itself follows Adelani et al. (2022a):
+# Adafactor, lr 1e-5, linear decay, no warmup, batch size 16, 3 epochs,
+# source prefixed with the translation direction.
+#
+# EVALUATION: FLORES-200 dev = validation, devtest = test. This holds
+# regardless of which training corpus is chosen - FLORES is a benchmark
+# with no training split by design (dev 997 / devtest 1012).
+#
+# TRAINING CORPUS: pending supervisor decision. See load_mt_train() in
+# src/finetuning/data_mt.py - it raises NotImplementedError until told.
+task: "mt"
+data_dir: "data/evaluation/mt"
+
+learning_rate: 1.0e-5
+batch_size: 16
+num_epochs: 3
+lr_scheduler_type: "linear"     # linear decay, no warmup
+warmup_steps: 0
+
+eval_batch_size: 8
+
+max_source_length: 512
+max_target_length: 384
+
+# FROZEN generation settings - identical for every checkpoint.
+num_beams: 5
+max_new_tokens: 384
+
+source_prefix: ""
+direction_prefix: "Translate English to Xhosa: "
+
+work_dir: "/scratch/rmdrak003/finetune_work"
+results_dir: "results/finetune"
