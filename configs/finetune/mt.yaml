@@ -1,18 +1,10 @@
-# Machine translation (en -> xh) finetuning protocol.
-#
-# Hyperparameters from NGLUEni (Meyer et al. 2024) section "MT
-# experiments", which itself follows Adelani et al. (2022a):
-# Adafactor, lr 1e-5, linear decay, no warmup, batch size 16, 3 epochs,
-# source prefixed with the translation direction.
-#
-# EVALUATION: FLORES-200 dev = validation, devtest = test. This holds
-# regardless of which training corpus is chosen - FLORES is a benchmark
-# with no training split by design (dev 997 / devtest 1012).
-#
-# TRAINING CORPUS: pending supervisor decision. See load_mt_train() in
-# src/finetuning/data_mt.py - it raises NotImplementedError until told.
+# MT (en -> xh) finetuning protocol.
+# NGLUEni / Adelani et al. (2022a): Adafactor, lr 1e-5, linear decay,
+# no warmup, batch 16, 3 epochs, direction-prefixed source.
+# Train: WMT22 top-N by laser_score (load_mt_train). Eval: FLORES dev/
+# devtest live in data_dir (val/test).
 task: "mt"
-data_dir: "data/evaluation/mt"
+data_dir: "data/finetune/mt"
 
 learning_rate: 1.0e-5
 batch_size: 16
