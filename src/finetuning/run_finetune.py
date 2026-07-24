@@ -112,6 +112,11 @@ def parse_args() -> Namespace:
                         help="Skip step 0 (the un-CPT'd base model).")
     parser.add_argument("--dry-run", action="store_true",
                         help="Report what would run, touch no GPU.")
+    parser.add_argument("--wandb", action="store_true",
+                        help="Stream live train/eval curves to W&B, one run per "
+                             "checkpoint, grouped by model-task.")
+    parser.add_argument("--wandb-project", type=str, default=None,
+                        help="Override the W&B project name from the config.")
     return parser.parse_args()
 
 
@@ -224,7 +229,7 @@ def load_task_data(cfg: FinetuneConfig) -> dict:
     :param cfg: Finetune configuration.
     :return: Dict with train/val sources+targets and test sources+references.
     """
-    if cfg.task == "t2x":
+    if cfg.task == "d2t":
         data_dir = Path(cfg.data_dir)
         train_inputs, train_refs = load_t2x_split(data_dir, "train")
         val_inputs, val_refs = load_t2x_split(data_dir, "valid")
@@ -338,6 +343,7 @@ def generate_predictions(model, tokenizer, sources: list[str], cfg: FinetuneConf
 def run_one_checkpoint(
     step: int, checkpoint_path: str, base_model: str,
     cfg: FinetuneConfig, data: dict, model_name: str, seed: int,
+    use_wandb: bool = False, wandb_project: str = "", wandb_job_type: str = "sweep",
 ) -> dict:
     """
     Finetune one checkpoint, score it, and delete its weights.
@@ -346,6 +352,9 @@ def run_one_checkpoint(
     checkpoint: CPT never altered the vocabulary, and the archived
     checkpoints are weights-only.
 
+    When use_wandb is set, one grouped W&B run streams the live train and
+    eval-loss curves; the final test metrics land in that run's summary.
+
     :param step: CPT step this checkpoint came from (0 = base model).
     :param checkpoint_path: Path or HF id to load weights from.
     :param base_model: HF id of the un-CPT'd base model.
@@ -353,6 +362,9 @@ def run_one_checkpoint(
     :param data: Loaded task data.
     :param model_name: Model identifier for the results row.
     :param seed: Random seed.
+    :param use_wandb: Stream curves to W&B, one run per checkpoint.
+    :param wandb_project: W&B project name.
+    :param wandb_job_type: "pilot" or "sweep", for filtering.
     :return: The result row to append to results.jsonl.
     """
     set_seed(seed)
@@ -380,6 +392,27 @@ def run_one_checkpoint(
     steps_per_epoch = max(1, math.ceil(len(train_dataset) / cfg.batch_size))
     total_steps = steps_per_epoch * cfg.num_epochs
 
+    # One run per checkpoint, grouped by model-task so the ~120 runs
+    # collapse to 6 groups; named by zero-padded step so they sort within.
+    run_name = f"{model_name}-{cfg.task}-s{step:05d}" + (f"-seed{seed}" if seed != 42 else "")
+    if use_wandb:
+        import wandb
+        wandb.init(
+            project=wandb_project,
+            group=f"{model_name}-{cfg.task}",
+            job_type=wandb_job_type,
+            name=run_name,
+            tags=[model_name, cfg.task, f"seed{seed}", wandb_job_type],
+            config={
+                "model": model_name, "ckpt_step": step, "task": cfg.task, "seed": seed,
+                "learning_rate": cfg.learning_rate, "batch_size": cfg.batch_size,
+                "num_epochs": cfg.num_epochs, "lr_scheduler_type": cfg.lr_scheduler_type,
+                "num_beams": cfg.num_beams, "max_new_tokens": cfg.max_new_tokens,
+                "n_train_pairs": cfg.n_train_pairs, "config_hash": cfg.hash(),
+            },
+            reinit=True,
+        )
+
     training_args = Seq2SeqTrainingArguments(
         output_dir=str(work_dir),
         per_device_train_batch_size=cfg.batch_size,
@@ -392,7 +425,8 @@ def run_one_checkpoint(
         metric_for_best_model="eval_loss",
         greater_is_better=False,
         logging_steps=50,
-        report_to=[],
+        report_to=["wandb"] if use_wandb else [],
+        run_name=run_name,
         seed=seed,
         bf16=torch.cuda.is_available(),
         # Generation is done manually after training so that the frozen
@@ -454,6 +488,16 @@ def run_one_checkpoint(
     pred_path = pred_dir / f"{model_name}_{step}_{cfg.task}_{seed}.jsonl"
     write_predictions(pred_path, predictions)
 
+    # Final test metrics into the run summary, so a cross-checkpoint panel
+    # (x=ckpt_step, y=test/chrf) can be built from the group. Then close
+    # the run before the next checkpoint reuses the process.
+    if use_wandb:
+        import wandb
+        wandb.run.summary["best_epoch"] = best_epoch
+        for k, v in scored["metrics"].items():
+            wandb.run.summary[f"test/{k}"] = v
+        wandb.finish()
+
     # Weights are transient. ~5GB per run, ~120 runs.
     del trainer, model, optimizer, scheduler
     if torch.cuda.is_available():
@@ -506,6 +550,14 @@ def main() -> None:
             logger.info(f"  would run step {step}: {path}")
         return
 
+    wandb_project = args.wandb_project or cfg.wandb_project
+    wandb_job_type = "pilot" if args.pilot else "sweep"
+    if args.wandb:
+        os.environ.setdefault("WANDB_WATCH", "false")      # no gradient logging on 1.2B params
+        os.environ.setdefault("WANDB_LOG_MODEL", "false")  # weights are deleted, never uploaded
+        logger.info(f"W&B on: project={wandb_project}, group=<model>-<task>, "
+                    f"job_type={wandb_job_type}")
+
     # Loaded once: identical data for every checkpoint is the point of
     # the protocol, and re-reading it per run would only add I/O.
     data = load_task_data(cfg)
@@ -518,7 +570,8 @@ def main() -> None:
         logger.info(f"=== [{index}/{len(pending)}] {args.model} step {step} ({cfg.task}) ===")
         started = time.time()
         row = run_one_checkpoint(
-            step, path, base_model, cfg, data, args.model, args.seed)
+            step, path, base_model, cfg, data, args.model, args.seed,
+            use_wandb=args.wandb, wandb_project=wandb_project, wandb_job_type=wandb_job_type)
         append_result(results_path, row)
         logger.info(
             f"=== step {step} done in {time.time() - started:.0f}s | "

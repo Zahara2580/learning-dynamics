@@ -26,7 +26,7 @@ class FinetuneConfig:
     Configuration for finetuning one checkpoint on one downstream task.
 
     Attributes:
-        task: Task identifier, "t2x" (data-to-text) or "mt" (translation).
+        task: Task identifier, "d2t" (data-to-text, T2X dataset) or "mt".
         data_dir: Directory holding the task's data files.
         learning_rate: Finetuning learning rate (locked per task).
         batch_size: Per-device training batch size (locked per task).
@@ -55,6 +55,8 @@ class FinetuneConfig:
         n_train_pairs: MT only: number of WMT22 pairs used for training,
             selected by the dedupe-then-top-N-by-laser_score rule in
             load_mt_train. 0 = unused (t2x).
+        wandb_project: W&B project for the --wandb curves. Infra, not
+            protocol (excluded from the hash).
         work_dir: Scratch directory for transient finetuned weights.
             Everything under here is deleted after scoring.
         results_dir: Permanent directory for results.jsonl + predictions.
@@ -74,13 +76,14 @@ class FinetuneConfig:
     source_prefix: str = ""
     direction_prefix: str = ""
     n_train_pairs: int = 0
+    wandb_project: str = "cpt-finetune-dynamics"
     work_dir: str = "/scratch/rmdrak003/finetune_work"
     results_dir: str = "results/finetune"
 
     def __post_init__(self) -> None:
         """Validate configuration values after construction."""
-        if self.task not in {"t2x", "mt"}:
-            raise ValueError(f"task must be 't2x' or 'mt', got {self.task!r}")
+        if self.task not in {"d2t", "mt"}:
+            raise ValueError(f"task must be 'd2t' or 'mt', got {self.task!r}")
         if self.learning_rate <= 0:
             raise ValueError(f"learning_rate must be positive, got {self.learning_rate}")
         if self.batch_size <= 0:
@@ -137,7 +140,8 @@ class FinetuneConfig:
         """
         payload = {
             k: v for k, v in asdict(self).items()
-            if k not in {"work_dir", "results_dir", "data_dir", "eval_batch_size"}
+            if k not in {"work_dir", "results_dir", "data_dir", "eval_batch_size",
+                         "wandb_project"}
         }
         blob = json.dumps(payload, sort_keys=True)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]

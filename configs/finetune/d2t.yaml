@@ -1,0 +1,19 @@
+# D2T (data-to-text, T2X dataset) finetuning protocol.
+# Meyer et al. (2024): Adafactor, lr 1e-4, no warmup, batch 4.
+# Fixed 5 epochs, best epoch by val loss (rationale in notes/).
+task: "d2t"
+data_dir: "data/finetune/d2t"    # test refs ragged 1-8 per input
+
+learning_rate: 1.0e-4
+batch_size: 4
+num_epochs: 5
+lr_scheduler_type: "constant"    # no warmup, no decay
+warmup_steps: 0
+eval_batch_size: 8
+max_source_length: 512
+max_target_length: 256
+num_beams: 5
+max_new_tokens: 256
+source_prefix: ""
+work_dir: "/scratch/rmdrak003/finetune_work"
+results_dir: "results/finetune"

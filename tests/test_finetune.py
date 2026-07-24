@@ -25,8 +25,8 @@ def test_mt_requires_positive_n_train_pairs():
         _mt_cfg(n_train_pairs=0)
 
 
-def test_t2x_does_not_require_n_train_pairs():
-    cfg = FinetuneConfig(task="t2x", data_dir="d", learning_rate=1e-4,
+def test_d2t_does_not_require_n_train_pairs():
+    cfg = FinetuneConfig(task="d2t", data_dir="d", learning_rate=1e-4,
                          batch_size=4, num_epochs=5)
     assert cfg.n_train_pairs == 0
 
@@ -40,9 +40,9 @@ def test_mt_yaml_carries_n_train_pairs():
     assert cfg.n_train_pairs == 10000
 
 
-def test_t2x_yaml_still_loads():
-    cfg = FinetuneConfig.from_yaml("configs/finetune/t2x.yaml")
-    assert cfg.task == "t2x"
+def test_d2t_yaml_still_loads():
+    cfg = FinetuneConfig.from_yaml("configs/finetune/d2t.yaml")
+    assert cfg.task == "d2t"
     assert cfg.n_train_pairs == 0
 
 
