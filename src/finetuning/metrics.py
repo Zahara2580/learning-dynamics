@@ -1,23 +1,16 @@
 """
-Corpus scoring with sacreBLEU, including ragged multi-reference handling.
+Corpus scoring with sacreBLEU, handling ragged multi-reference sets.
 
-THE TRANSPOSITION IS THE DANGEROUS PART. sacreBLEU's corpus functions
-want references grouped BY REFERENCE INDEX, not by sentence:
+sacreBLEU groups references BY REFERENCE INDEX, not by sentence:
+refs_t[k][j] is the k-th reference of sentence j, None-padded where a
+sentence has fewer than k+1 references. Passing the natural per-sentence
+nesting instead returns plausible but wrong numbers with no error. The
+recorded signature reports 'nrefs:var' when the ragged padding was read
+correctly.
 
-    refs_t[k][j] = the k-th reference of the j-th sentence
-
-Sentences with fewer references than the maximum are padded with None.
-Passing the natural per-sentence nesting instead produces numbers that
-look plausible and are wrong, with no error raised. The signature string
-recorded alongside each score reports 'nrefs:var', which is sacreBLEU
-confirming it saw a variable number of references - a useful check that
-the transposition did what we think.
-
-Predictions and references are fed to sacreBLEU as RAW STRINGS. No
-sentence splitting, lowercasing, detokenising, or normalisation:
-sacreBLEU does its own tokenisation internally, and pre-processing here
-would both break comparability with published baselines and make the
-recorded signature a lie.
+Predictions and references are passed as raw strings - sacreBLEU
+tokenises internally, so any preprocessing here would break
+comparability with published baselines.
 """
 
 from sacrebleu.metrics import BLEU, CHRF, TER

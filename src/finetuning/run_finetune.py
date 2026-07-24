@@ -1,34 +1,18 @@
 """
-Finetune a sequence of CPT checkpoints on a downstream task and score them.
+Finetune CPT checkpoints on a downstream task and score them.
 
-One invocation walks a model's checkpoints in increasing step order and,
-for each, finetunes a fresh copy under a locked protocol, generates on
-the test set, scores, records one JSON line, keeps the predictions, and
-DELETES the finetuned weights. The output is a learning-dynamics curve:
-downstream task performance as a function of CPT step.
+Walks a model's checkpoints in increasing step order; for each,
+finetunes a fresh copy, generates on the test set, appends one metrics
+row, writes the predictions, and deletes the weights (~5GB x ~120 runs
+would exceed the scratch quota; predictions allow any metric to be
+recomputed later).
 
-Three properties are load-bearing:
-
-  RESUME. Every completed run is keyed by (model, ckpt_step, task, seed)
-  in results.jsonl. Runs already present are skipped. A 48h SLURM job
-  that dies mid-sweep is fixed by resubmitting the same script; jobs
-  that find everything done exit in seconds.
-
-  WEIGHT DELETION. A finetuned t5-large is ~5GB and there are ~120 runs.
-  Keeping them would blow the scratch quota many times over. Predictions
-  and metrics are kept forever - every metric in the thesis can be
-  recomputed from the saved predictions without touching a GPU again.
-
-  PROTOCOL INVARIANCE. Nothing varies across checkpoints except the
-  checkpoint. Same hyperparameters, same seed, same generation settings,
-  same data. The finetuning protocol is the measurement instrument, so
-  any per-checkpoint adaptation (early stopping on patience, tuned LR)
-  would confound CPT progress with finetuning differences.
+Completed runs are keyed (model, ckpt_step, task, seed) in results.jsonl
+and skipped, so resubmitting after a killed job is safe.
 
 Usage:
     uv run python3 -m src.finetuning.run_finetune \
-        --config configs/finetune/t2x.yaml \
-        --model t5 --pilot
+        --config configs/finetune/t2x.yaml --model t5 --pilot
 """
 
 import argparse

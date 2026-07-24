@@ -1,23 +1,15 @@
 """
 Machine translation (en -> xh) data loading.
 
-EVALUATION is settled: FLORES-200 dev (997 sentences) is the validation
-set and devtest (1012) is the test set. FLORES has no training split by
-design - it is an n-way parallel benchmark whose comparability across
-200 languages depends on nobody training on it. Anyone who "finetunes on
-FLORES dev" is training on 997 sentences and reporting a memorisation
-score.
+FLORES-200 dev (997 sentences) is the validation set, devtest (1012) the
+test set. FLORES has no training split: it is an n-way parallel
+benchmark whose cross-language comparability depends on nobody training
+on it.
 
-TRAINING data is NOT settled - see load_mt_train below.
-
-Verified while scoping this module:
-  - MAFAND (masakhane/mafand) has NO en-xho train split. isiXhosa is one
-    of five languages it ships as validation/test only, because it was a
-    transfer target in Adelani et al. (2022a), not a supervised pair.
-  - allenai/wmt22_african config eng-xho DOES have a train split, but it
-    is 8.7M LASER-mined pairs with visibly loose alignments (a Quran
-    verse paired with an unrelated isiXhosa sentence in the first few
-    rows). It carries a laser_score column for filtering.
+The training corpus is not yet chosen - see load_mt_train. MAFAND has no
+en-xho train split (isiXhosa ships as validation/test only);
+allenai/wmt22_african eng-xho does, but is 8.7M LASER-mined pairs with
+loose alignments and needs filtering on its laser_score column.
 """
 
 from pathlib import Path

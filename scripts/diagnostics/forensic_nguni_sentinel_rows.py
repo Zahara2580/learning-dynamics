@@ -1,28 +1,20 @@
 """
-Weight forensics: which token IDs did nguni-byt5's continued pretraining
-actually train?
+Weight forensics: which token ids did nguni-byt5's CPT actually train?
 
-nguni-byt5-large was initialized FROM google/byt5-large, so any embedding
-row its CPT never used still matches byt5's bit-for-bit (input-embedding
-rows only receive gradient when their token appears in a batch; with
-weight_decay=0 unused rows never move). Diffing the two models row-by-row
-is therefore a direct physical readout of which sentinel convention the
-lafand-mt-based CPT actually used:
+nguni-byt5-large was initialised from google/byt5-large, and an input
+embedding row only receives gradient when its token appears in a batch,
+so with weight_decay=0 any row the CPT never used still matches byt5
+bit-for-bit. Diffing the two models row-by-row reads out the sentinel
+convention directly:
 
-  - sentinels descending from 383  -> diffs at 383 decaying downward
-  - sentinels ascending from 259   -> diffs at 259 decaying upward
-  - sentinels descending from 258  -> diffs bleeding down into byte range
-                                      (lafand preprocess.py as written,
-                                      transformers 4.10)
+  descending from 383 -> diffs at 383 decaying downward
+  ascending from 259  -> diffs at 259 decaying upward
+  descending from 258 -> diffs bleeding down into the byte range
 
-The input embedding (shared.weight) is the primary evidence. lm_head gets
-dense gradients through the softmax for every row at every step, so all
-its rows will have drifted - reported only as secondary context.
+shared.weight is the evidence; lm_head gets dense gradients every step,
+so its drift is reported only as context. CPU-only.
 
-CPU-only, no GPU. Models load from the HF cache (already downloaded).
-Run in a sintx shell:
-    cd /scratch/rmdrak003/learning-dynamics
-    uv run python3 scripts/memory_fit_checks/forensic_nguni_sentinel_rows.py
+    uv run python3 scripts/diagnostics/forensic_nguni_sentinel_rows.py
 """
 
 import gc

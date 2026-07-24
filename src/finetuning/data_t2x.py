@@ -1,19 +1,15 @@
 """
 T2X (isiXhosa data-to-text) data loading.
 
-T2X ships as 6 flat, line-aligned files from github.com/francois-meyer/t2x:
-{train,valid,test}.{data,text}. Line i of .data is the input for line i
-of .text. Verified counts: train 3859, valid 460, test 378.
+Six flat line-aligned files from github.com/francois-meyer/t2x:
+{train,valid,test}.{data,text}, where line i of .data is the input for
+line i of .text. Counts: train 3859, valid 460, test 378.
 
-Two properties of these files are easy to get silently wrong:
-
-  1. Multiple references are PACKED INTO ONE LINE, separated by the
-     literal string '*#'. A naive reader treats a 3-reference test line
-     as a single reference string and reports a badly deflated score.
-  2. The published files contain mojibake ('SuAirez', 'a-"'). We do NOT
-     clean, normalise, or re-encode it. The published baselines were
-     trained and scored on these exact bytes; "fixing" the text would
-     make our numbers incomparable to theirs.
+Two properties are easy to get silently wrong. Multiple references are
+packed into ONE line separated by the literal string '*#', so a naive
+reader scores a 3-reference line as one long reference. And the files
+contain mojibake, which is passed through unchanged - the published
+baselines were scored on these exact bytes.
 """
 
 from pathlib import Path

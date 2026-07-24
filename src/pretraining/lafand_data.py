@@ -1,25 +1,16 @@
 """
-Port of the data pieces of lafand-mt mt5_byt5_pre_training/util.py:
-the linecache-backed Seq2SeqDataset and the task_type='generation_id'
-branch of Seq2SeqDataCollator, which is the path their pretraining used
-(distribute_train.sh passes --task_type generation_id).
+Port of the data pieces of lafand-mt mt5_byt5_pre_training/util.py: the
+linecache-backed Seq2SeqDataset and the task_type='generation_id' branch
+of Seq2SeqDataCollator.
 
-The dataset reads {type_path}.source/.target files (space-separated
-token-id strings produced offline by lafand_preprocess.py); the collator
-parses the ids back, truncates to max lengths, and pads to the longest
-sequence in the batch.
+Reads {type_path}.source/.target (space-separated token ids written
+offline by lafand_preprocess.py), parses them back, truncates to the max
+lengths, and pads to the longest sequence in the batch.
 
-Faithfulness notes:
-  - labels are padded with -100 so padding is EXCLUDED from the loss.
-    This deviates from the original (which pads labels with pad_token_id,
-    silently including padding in the loss); the supervisor confirmed the
-    intended behavior is padding-ignored, and a measured A/B (t5 eval
-    3.53 vs 9.03) showed the original behavior just dilutes the loss.
-  - truncation happens here, after masking (original behavior): a
-    truncated example can lose target spans whose sentinels survive in
-    the input. lafand_preprocess.py's windowing keeps this rare.
-  - no decoder_input_ids are built; T5 derives them from labels
-    internally, as in the original.
+Labels pad with -100 so padding is excluded from the loss. Truncation
+happens after masking, so a truncated example can lose target spans
+whose sentinels survive in the input; the 512-token windowing keeps this
+rare. decoder_input_ids are not built - T5 derives them from labels.
 """
 
 import linecache

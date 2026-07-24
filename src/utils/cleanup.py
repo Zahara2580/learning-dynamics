@@ -1,24 +1,16 @@
 """
-Cleanup utility for scratch data - deletes specific categories of
-generated/downloaded data on request, to free up quota space.
+Deletes regenerable scratch data to free quota. Everything it can remove
+can be re-downloaded or rebuilt. Defaults to a dry run; nothing is
+deleted without --yes.
 
-Everything this script can delete is regenerable (corpus/data can be
-re-downloaded, preprocessed chunks can be rebuilt, checkpoints are test
-artifacts or resumable via find_latest_checkpoint) - nothing here is
-a unique, irreplaceable source of truth. Still defaults to a dry run
-so nothing is ever deleted without an explicit --yes.
+--t5/--byt5/--nguni-byt5/--all delete checkpoints and results only.
+Preprocessed chunks are slow to rebuild, so they need --preprocessed
+(or --wipe-all) explicitly.
 
 Usage:
     uv run python3 -m src.utils.cleanup --t5 --dry-run
-    uv run python3 -m src.unit_tests.cleanup --t5 --yes
-    uv run python3 -m src.unit_tests.cleanup --byt5 --nguni-byt5 --yes
-    uv run python3 -m src.unit_tests.cleanup --corpus --finetune --yes
-    uv run python3 -m src.unit_tests.cleanup --all --yes
-
-Note: --t5/--byt5/--nguni-byt5/--all only delete checkpoints/results, NOT
-preprocessed chunks (data/preprocessed/<model>) - those take a long time
-to regenerate. Pass --preprocessed explicitly (or --wipe-all) if you
-actually want to delete preprocessed chunks too.
+    uv run python3 -m src.utils.cleanup --byt5 --nguni-byt5 --yes
+    uv run python3 -m src.utils.cleanup --all --yes
 """
 
 import argparse

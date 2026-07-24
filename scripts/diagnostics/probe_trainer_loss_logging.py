@@ -1,31 +1,21 @@
 """
-Runtime probe: definitively characterize how this environment's Trainer
-logs training loss under gradient accumulation.
+Runtime probe: how this environment's Trainer logs loss under gradient
+accumulation.
 
-Proves/refutes, with runtime values printed from inside the real
-(unmodified) Trainer.training_step code path:
-  1. model_accepts_loss_kwargs / num_items_in_batch and the exact boolean
-     that decides whether the ÷gradient_accumulation_steps reporting
-     division runs.
-  2. Whether the loss returned by training_step equals the pre-division
-     compute_loss output (division bypassed) or pre/accum (division applied).
-  3. _tr_loss accumulating the raw per-micro-batch value across the window.
-  4. The epoch-boundary dip: dataset of 100 samples, batch size 1,
-     accum 51 -> alternating windows of 51 and 49 micro-batches, so the
-     logged loss must drop by exactly 49/51 at every second step if the
-     summed-logging hypothesis is right.
+Prints, from inside the real Trainer.training_step path:
+  1. model_accepts_loss_kwargs and the boolean deciding whether the
+     divide-by-accumulation-steps reporting division runs
+  2. whether training_step returns the pre-division compute_loss output
+  3. _tr_loss accumulating raw per-micro-batch values
+  4. the epoch-boundary dip: 100 samples, batch 1, accum 51 gives
+     alternating windows of 51 and 49 micro-batches, so summed logging
+     makes the reported loss drop by exactly 49/51 every second step
 
-No monkey-patching of internals is needed to stay objective: we subclass
-and call super(), observing inputs (compute_loss return) and outputs
-(training_step return) of the genuine code, so whatever behavior is
-printed is the library's own.
+Subclasses and calls super() rather than patching internals, so the
+behaviour printed is the library's own. Tiny randomly-initialised T5,
+CPU-only, ~1-2 minutes.
 
-Tiny randomly-initialized T5 (same T5ForConditionalGeneration class as
-t5-large, so model_accepts_loss_kwargs is identical), CPU-only, no
-downloads, no GPU, ~1-2 minutes.
-
-Run on the HPC (inside sintx, from /scratch/rmdrak003/learning-dynamics):
-    uv run python3 scripts/memory_fit_checks/probe_trainer_loss_logging.py
+    uv run python3 scripts/diagnostics/probe_trainer_loss_logging.py
 """
 
 import os

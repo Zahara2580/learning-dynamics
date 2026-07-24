@@ -1,20 +1,13 @@
 """
 Export the passage-level WURA corpus to plain text, one passage per
-line - the input format the lafand-mt (AfriByT5) pretraining pipeline
-consumes.
+line, which is the input format the lafand-mt pipeline consumes.
 
-Per supervisor guidance ("process the data examples (passages) as is"),
-WURA's own pre-segmented passages are used directly, with no manual
-splitting: one passage = one training example. The lafand preprocess
-step (lafand_preprocess.py) reads this file with .readlines() and
-treats every line as one example; batching, truncation and padding are
-left to the HuggingFace collator/Trainer downstream.
-
-The only filtering is a minimum length (empty/near-empty lines crash
-the lafand data loader and produce degenerate masking examples).
+WURA's own pre-segmented passages are used as-is: one passage is one
+training example. lafand_preprocess.py reads the file with readlines()
+and treats each line as an example. The only filtering is a minimum
+length, since empty lines crash the lafand loader.
 
     uv run python3 -m src.pretraining.export_wura_lines --input /scratch/rmdrak003/data/corpus/xho-passage --split train --output /scratch/rmdrak003/data/lafand/lines-passage/train.xh
-    uv run python3 -m src.pretraining.export_wura_lines --input /scratch/rmdrak003/data/corpus/xho-passage --split validation --output /scratch/rmdrak003/data/lafand/lines-passage/dev.xh
 """
 
 import argparse

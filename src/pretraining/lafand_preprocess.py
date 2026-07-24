@@ -5,31 +5,19 @@ span-corruption preprocessing that writes train.source/train.target
 pipeline used to continued-pretrain Nguni-ByT5 (per supervisor mandate,
 this replaces our previous online DataCollatorForT5MLM approach).
 
-Mechanics preserved verbatim from the original:
-  - 15% of token positions sampled i.i.d. (random.sample), NOT
-    span-constructed -> masked runs are geometric, mean ~1.18 tokens
-  - consecutive positions merged into one run (racha_detection), one
-    sentinel token per run (masking)
-  - target = complement masking; the while-loop resamples until the
-    target starts with the first sentinel (i.e. position 0 unmasked),
-    which keeps input/target sentinel numbering aligned
-  - one fixed corruption per line, written to disk (offline masking)
+Corruption: 15% of token positions sampled i.i.d. (not span-constructed),
+so masked runs are geometric with mean ~1.18 tokens. Consecutive
+positions merge into one run, one sentinel per run. The target is the
+complement, resampled until it starts with the first sentinel, which
+keeps source and target sentinel numbering aligned. One fixed corruption
+per line, written to disk.
 
-Sanctioned adaptations (each per the repo's own README or necessary):
-  - the hardcoded first-sentinel id 258 is computed dynamically as
-    tokenizer.encode('<extra_id_0>')[0], per the README instruction
-    ("change the number 258 to the first token id when using mT5"):
-    t5 -> 32099 (descending), byt5/nguni-byt5 -> 259 (ascending on
-    current transformers - matching what nguni-byt5 was actually
-    trained with, confirmed by embedding forensics)
-  - lines are pre-truncated to --max-line-tokens (default 512) BEFORE
-    masking: without this, paragraphs long enough to produce more
-    masked runs than there are <extra_id_*> tokens (100 for t5, 125
-    for byt5) would silently encode nonexistent sentinel strings as
-    garbage tokens. 512 bounds runs to ~65, well inside both limits.
-  - random.seed(--seed) for reproducibility (original was unseeded)
-  - sentinel ids are cached per index instead of re-encoded per run
-    (identical values, just faster)
+The first sentinel id is read from the tokenizer rather than hardcoded
+to 258: t5 -> 32099 (descending), byt5/nguni-byt5 -> 259 (ascending).
+Passages are split into --max-line-tokens (default 512) windows before
+masking; longer windows can need more sentinels than the vocabulary
+defines (100 for t5, 125 for byt5) and would encode garbage. 512 bounds
+runs to ~65. Seeded for reproducibility.
 
 Usage (once per model per split):
     uv run python3 -m src.pretraining.lafand_preprocess --input-text /scratch/rmdrak003/data/lafand/lines/train.xh --model-config configs/models/byt5.yaml --output-dir /scratch/rmdrak003/data/lafand/byt5 --type-path train

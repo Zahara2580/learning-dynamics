@@ -1,33 +1,18 @@
 """
-Forward-pass loss diagnostic for nguni-byt5 using the lafand-mt (AfriByT5)
-corruption it was actually CPT'd with, instead of our T5-style collator.
+Forward-pass loss diagnostic for nguni-byt5 under lafand-mt corruption.
 
-Replicates lafand's preprocess.py exactly:
-  - 15% of positions sampled i.i.d. uniformly (random.sample), NOT
-    span-constructed -> masked runs are geometric, mean ~1.18 bytes
-  - consecutive selected positions merged into one run, one sentinel each
-    (racha_detection + masking)
-  - target = complement masking (unmasked runs -> sentinels, masked
-    tokens kept), position 0 always unmasked so input/target sentinel
-    numbering aligns (lafand enforced this via the while target[0] loop)
+Replicates lafand's preprocess.py (15% of positions sampled i.i.d.,
+consecutive runs merged to one sentinel each, complement target) and
+runs the same masked batch through nguni-byt5 under three sentinel
+conventions, identical masks and only the ids differing:
+  A: descending from 383    B: ascending from 259    C: descending from 258
 
-Runs the same masked batch through nguni-byt5 under the three candidate
-sentinel conventions (identical masks, only sentinel ids differ):
-  A: descending from 383  (T5-style; what our collator's base-384 does)
-  B: ascending  from 259  (newer-transformers <extra_id_0>=259)
-  C: descending from 258  (lafand code as written under transformers 4.10)
+Lowest loss identifies the convention the model was trained with. Set
+INCLUDE_BYT5=1 to run byt5-large as an anchor. CPU-only, ~2-5 min per
+variant.
 
-Lowest loss = the convention nguni-byt5 was born with, now tested at its
-native ~1.18 span length rather than the span-3/span-20 grid we used
-before. Set INCLUDE_BYT5=1 to also run byt5-large as an anchor (expect C
-to win there per its paper).
-
-CPU-only (no GPU request needed), ~2-5 min per variant. Run in sintx:
-    cd /scratch/rmdrak003/learning-dynamics
-    uv run python3 scripts/memory_fit_checks/diagnose_nguni_lafand_style.py
-
-Self-test of just the mask construction (no model, runs anywhere):
-    uv run python3 scripts/memory_fit_checks/diagnose_nguni_lafand_style.py --selftest
+    uv run python3 scripts/diagnostics/diagnose_nguni_lafand_style.py
+    uv run python3 scripts/diagnostics/diagnose_nguni_lafand_style.py --selftest
 """
 
 import os
