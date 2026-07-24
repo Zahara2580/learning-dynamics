@@ -114,10 +114,14 @@ def load_mt_train(cfg) -> tuple[list[str], list[str]]:
     Deterministic: same corpus + same N -> same training set, always.
     """
     raw = load_dataset(WMT22_DATASET, WMT22_CONFIG, split="train")
-    ranked = raw.sort("laser_score", reverse=True)
 
-    # Lazy row iteration keeps the 8.7M-row column out of memory.
-    pairs = (row["translation"] for row in ranked)
+    # Rank by laser_score via argsort on the score column rather than
+    # Dataset.sort (whose fingerprinting pickles the whole table and
+    # breaks on some Python builds). The generator then pulls only as
+    # many rows as the top-N needs, not all 8.7M.
+    scores = raw["laser_score"]
+    order = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
+    pairs = (raw[i]["translation"] for i in order)
     sources, targets, n_dup = select_top_n_unique(pairs, cfg.n_train_pairs)
 
     logger.info(
