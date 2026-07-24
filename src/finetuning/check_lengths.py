@@ -24,6 +24,7 @@ from src.finetuning.data_mt import (
     load_flores_split,
     load_mt_train,
 )
+from src.finetuning.data_t2x import build_training_pairs, load_t2x_split
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -62,18 +63,28 @@ def main() -> None:
     cfg = FinetuneConfig.from_yaml(args.config)
     cap = cfg.max_target_length
 
-    logger.info("loading MT target corpora (downloads/sorts WMT22 on first run)...")
-    _, train_targets = load_mt_train(cfg)  # reuses the real top-N selection
-    _, dev_refs = load_flores_split(cfg.data_dir, FLORES_VALIDATION_SPLIT)
-    _, test_refs = load_flores_split(cfg.data_dir, FLORES_TEST_SPLIT)
+    if cfg.task == "mt":
+        logger.info("loading MT corpora (WMT22 train + FLORES val/test)...")
+        _, train_targets = load_mt_train(cfg)  # reuses the real top-N selection
+        _, val_refs = load_flores_split(cfg.data_dir, FLORES_VALIDATION_SPLIT)
+        _, test_refs = load_flores_split(cfg.data_dir, FLORES_TEST_SPLIT)
+    else:  # d2t
+        logger.info("loading D2T corpora (T2X train/valid/test)...")
+        train_inputs, train_refs = load_t2x_split(cfg.data_dir, "train")
+        _, val_refs = load_t2x_split(cfg.data_dir, "valid")
+        _, test_refs = load_t2x_split(cfg.data_dir, "test")
+        _, train_targets = build_training_pairs(train_inputs, train_refs, cfg.source_prefix)
+
+    # test = ALL references (any of them may be the target generation must
+    # reach), so flatten the multi-reference lists rather than taking [0].
     corpora = {
-        "wmt22_train": train_targets,
-        "flores_dev": [r[0] for r in dev_refs],
-        "flores_devtest": [r[0] for r in test_refs],
+        "train_target": train_targets,
+        "val_target": [r[0] for r in val_refs],
+        "test_all_refs": [ref for refs in test_refs for ref in refs],
     }
 
     print("\n" + "=" * 78)
-    print(f"MT target length coverage   (cap = max_target_length = {cap})")
+    print(f"{cfg.task.upper()} target length coverage   (cap = max_target_length = {cap})")
     print("=" * 78)
 
     print("\nUTF-8 byte length (tokenizer-independent):")
@@ -84,18 +95,19 @@ def main() -> None:
     for tok_name in TOKENIZERS:
         print(f"\n{tok_name} token length:")
         tokenizer = AutoTokenizer.from_pretrained(tok_name)
-        worst_p99, total_over, total_n = 0, 0, 0
+        worst_max, total_over = 0, 0
         for name, targets in corpora.items():
             s = summarise([len(tokenizer.encode(t)) for t in targets], cap)
             print_row(name, s, cap)
-            worst_p99 = max(worst_p99, s["p99"])
+            worst_max = max(worst_max, s["max"])
             total_over += s["over"]
-            total_n += s["n"]
-        if worst_p99 <= cap:
-            verdicts.append(f"OK: p99 <= {cap} for {tok_name}")
+        # "No clipping" = zero targets over the cap (stricter than p99).
+        if total_over == 0:
+            verdicts.append(f"NO CLIPPING: every target <= {cap} for {tok_name} (longest {worst_max})")
         else:
             verdicts.append(
-                f"RAISE CAP: {total_over} of {total_n} targets exceed {cap} for {tok_name}")
+                f"CLIPS: {total_over} target(s) exceed {cap} for {tok_name} "
+                f"(longest {worst_max}) -> raise the cap to >= {worst_max}")
 
     print("\n" + "=" * 78)
     for verdict in verdicts:

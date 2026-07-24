@@ -11,9 +11,11 @@ lr_scheduler_type: "constant"    # no warmup, no decay
 warmup_steps: 0
 eval_batch_size: 8
 max_source_length: 512
-max_target_length: 256
+# 512 clears the longest T2X train target (337 bytes) so no target is
+# truncated; test refs top out at 155. Verified by check_lengths.
+max_target_length: 512
 num_beams: 5
-max_new_tokens: 256
+max_new_tokens: 512
 source_prefix: ""
 work_dir: "/scratch/rmdrak003/finetune_work"
 results_dir: "results/finetune"

@@ -15,11 +15,13 @@ warmup_steps: 0
 eval_batch_size: 8
 
 max_source_length: 512
-max_target_length: 384
+# 512 = pretraining seq length; clears the longest FLORES devtest ref
+# (396 bytes) so nothing is truncated. Verified by check_lengths.
+max_target_length: 512
 
 # FROZEN generation settings - identical for every checkpoint.
 num_beams: 5
-max_new_tokens: 384
+max_new_tokens: 512
 
 source_prefix: ""
 direction_prefix: "Translate English to Xhosa: "

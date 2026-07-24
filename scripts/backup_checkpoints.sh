@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=l40sfree
 #SBATCH --partition=l40s
-#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=4 --gres=gpu:l40s:1
+#SBATCH --nodes=1 --ntasks=1 --cpus-per-task=4
 #SBATCH --time=08:00:00
 #SBATCH --job-name="backup-ckpts"
 #SBATCH --mail-user=rmdrak003@myuct.ac.za
@@ -10,9 +10,10 @@
 #SBATCH --error=logs/backup_%j.log
 #
 # Offsite backup of the 3 CPT winner checkpoint sets to private HF repos.
-# Runs on a worker node (large uploads must not run on the head node).
-# The GPU is requested only so the job schedules on this account - the
-# upload uses none. Resumable: resubmit if it times out and it continues.
+# Upload is network/disk only - NO GPU requested (asking for one just
+# wastes a scarce card and queues behind GPU jobs). Runs on a worker node
+# (large uploads must not run on the head node). Resumable: resubmit if
+# it times out and it continues. Simpler: just run the module in sintx.
 #
 #   sbatch scripts/backup_checkpoints.sh                    # all 3 models
 #   sbatch --export=ALL,MODELS="t5" scripts/backup_checkpoints.sh
