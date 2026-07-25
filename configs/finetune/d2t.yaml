@@ -7,7 +7,7 @@ data_dir: "data/finetune/d2t"    # test refs ragged 1-8 per input
 learning_rate: 1.0e-4
 batch_size: 4
 num_epochs: 5
-lr_scheduler_type: "constant"    # no warmup, no decay
+lr_scheduler_type: "linear"      # linear decay to 0, no warmup (HF default)
 warmup_steps: 0
 eval_batch_size: 8
 max_source_length: 512

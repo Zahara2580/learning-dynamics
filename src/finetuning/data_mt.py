@@ -77,19 +77,26 @@ def build_mt_sources(sources: list[str], source_prefix: str, direction_prefix: s
     return [f"{source_prefix}{direction_prefix}{s}" for s in sources]
 
 
-def select_top_n_unique(
-    ranked_pairs: Iterable[dict], n_train_pairs: int
-) -> tuple[list[str], list[str], int]:
-    """Take the first n unique (eng, xho) pairs from a laser-desc iterable.
+def _pair_of(item: dict) -> tuple[str, str]:
+    """Default (eng, xho) extractor: a WMT22 row's translation sub-dict."""
+    tr = item["translation"] if "translation" in item else item
+    return tr["eng"], tr["xho"]
 
-    Skips empty pairs and exact (source, target) duplicates, keeping the
-    first (= highest-scoring) occurrence. Separated from the download so
-    the selection rule is testable without fetching WMT22.
+
+def select_top_n_unique(
+    ranked_items: Iterable[dict], n_train_pairs: int, get_pair=_pair_of
+) -> tuple[list[dict], int]:
+    """First n items whose (eng, xho) pair is non-empty and not a duplicate.
+
+    Returns the KEPT ITEMS themselves (in laser-desc order), carrying any
+    extra fields such as laser_score, plus the count of exact duplicates
+    skipped. Callers extract what they need - the single source of the
+    selection rule, so load_mt_train and the inspector can never drift.
     """
-    sources, targets, seen = [], [], set()
-    n_dup = 0
-    for pair in ranked_pairs:
-        s, t = pair["eng"].strip(), pair["xho"].strip()
+    kept, seen, n_dup = [], set(), 0
+    for item in ranked_items:
+        s, t = get_pair(item)
+        s, t = s.strip(), t.strip()
         if not s or not t:
             continue
         key = (s, t)
@@ -97,15 +104,27 @@ def select_top_n_unique(
             n_dup += 1
             continue
         seen.add(key)
-        sources.append(s)
-        targets.append(t)
-        if len(sources) == n_train_pairs:
+        kept.append(item)
+        if len(kept) == n_train_pairs:
             break
 
-    if len(sources) < n_train_pairs:
+    if len(kept) < n_train_pairs:
         raise ValueError(
-            f"only {len(sources)} unique pairs available, wanted {n_train_pairs}")
-    return sources, targets, n_dup
+            f"only {len(kept)} unique pairs available, wanted {n_train_pairs}")
+    return kept, n_dup
+
+
+def rank_by_laser(raw) -> "Iterable[dict]":
+    """Yield WMT22 rows in descending laser_score order.
+
+    argsort on the score column rather than Dataset.sort (whose
+    fingerprinting pickles the whole table and breaks on some Python
+    builds); the generator pulls only as many rows as the caller consumes,
+    not all 8.7M.
+    """
+    scores = raw["laser_score"]
+    order = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
+    return (raw[i] for i in order)
 
 
 def load_mt_train(cfg) -> tuple[list[str], list[str]]:
@@ -114,15 +133,9 @@ def load_mt_train(cfg) -> tuple[list[str], list[str]]:
     Deterministic: same corpus + same N -> same training set, always.
     """
     raw = load_dataset(WMT22_DATASET, WMT22_CONFIG, split="train")
-
-    # Rank by laser_score via argsort on the score column rather than
-    # Dataset.sort (whose fingerprinting pickles the whole table and
-    # breaks on some Python builds). The generator then pulls only as
-    # many rows as the top-N needs, not all 8.7M.
-    scores = raw["laser_score"]
-    order = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
-    pairs = (raw[i]["translation"] for i in order)
-    sources, targets, n_dup = select_top_n_unique(pairs, cfg.n_train_pairs)
+    kept, n_dup = select_top_n_unique(rank_by_laser(raw), cfg.n_train_pairs)
+    sources = [row["translation"]["eng"].strip() for row in kept]
+    targets = [row["translation"]["xho"].strip() for row in kept]
 
     logger.info(
         f"MT train: kept {len(sources)} pairs "

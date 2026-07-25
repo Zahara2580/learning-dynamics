@@ -329,6 +329,15 @@ def generate_predictions(model, tokenizer, sources: list[str], cfg: FinetuneConf
             num_beams=cfg.num_beams,
             max_new_tokens=cfg.max_new_tokens,
             do_sample=False,
+            # Pin the decoding companions so every checkpoint decodes
+            # identically, regardless of what its generation_config.json
+            # inherited (step 0 is an old Hub config, CPT checkpoints a
+            # newer one). Vanilla beam search: no length bias, no n-gram
+            # blocking, no repetition penalty.
+            length_penalty=1.0,
+            early_stopping=False,
+            no_repeat_ngram_size=0,
+            repetition_penalty=1.0,
         )
         predictions.extend(
             tokenizer.batch_decode(generated, skip_special_tokens=True)
@@ -372,6 +381,9 @@ def run_one_checkpoint(
 
     tokenizer = AutoTokenizer.from_pretrained(base_model)
     model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint_path)
+    logger.info(
+        f"loaded {'BASE model' if step == BASE_MODEL_STEP else f'checkpoint-{step}'} "
+        f"weights from {checkpoint_path}")
 
     train_dataset = Seq2SeqDataset(
         data["train_sources"], data["train_targets"], tokenizer,
@@ -460,6 +472,19 @@ def run_one_checkpoint(
 
     scored = score_corpus(predictions, data["test_references"])
 
+    # Audit trail: the decoding settings actually pinned, plus what this
+    # checkpoint's own generation_config carried (so a settings asymmetry
+    # between base and CPT checkpoints is detectable after the fact).
+    gen_cfg = trainer.model.generation_config
+    generation = {
+        "pinned": {"num_beams": cfg.num_beams, "max_new_tokens": cfg.max_new_tokens,
+                   "do_sample": False, "length_penalty": 1.0, "early_stopping": False,
+                   "no_repeat_ngram_size": 0, "repetition_penalty": 1.0},
+        "checkpoint_defaults": {k: getattr(gen_cfg, k, None) for k in
+                                ["length_penalty", "early_stopping", "no_repeat_ngram_size",
+                                 "repetition_penalty", "num_beams", "max_length"]},
+    }
+
     row = {
         "model": model_name,
         "ckpt_step": step,
@@ -467,6 +492,7 @@ def run_one_checkpoint(
         "seed": seed,
         "metrics": scored["metrics"],
         "diagnostics": scored["diagnostics"],
+        "generation": generation,
         "sacrebleu_signatures": scored["sacrebleu_signatures"],
         "val_loss_per_epoch": val_losses,
         "best_epoch": best_epoch,

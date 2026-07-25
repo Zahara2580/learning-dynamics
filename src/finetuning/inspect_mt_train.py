@@ -14,7 +14,12 @@ import numpy as np
 from datasets import load_dataset
 
 from src.finetuning.config import FinetuneConfig
-from src.finetuning.data_mt import WMT22_CONFIG, WMT22_DATASET
+from src.finetuning.data_mt import (
+    WMT22_CONFIG,
+    WMT22_DATASET,
+    rank_by_laser,
+    select_top_n_unique,
+)
 
 
 def parse_args() -> Namespace:
@@ -29,22 +34,12 @@ def main() -> None:
     cfg = FinetuneConfig.from_yaml(args.config)
 
     raw = load_dataset(WMT22_DATASET, WMT22_CONFIG, split="train")
-    scores = raw["laser_score"]
-    order = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)
 
-    # Reproduce load_mt_train's selection, keeping the score alongside.
-    kept, seen = [], set()
-    for i in order:
-        row = raw[i]
-        s, t = row["translation"]["eng"].strip(), row["translation"]["xho"].strip()
-        if not s or not t:
-            continue
-        if (s, t) in seen:
-            continue
-        seen.add((s, t))
-        kept.append((row["laser_score"], s, t))
-        if len(kept) == cfg.n_train_pairs:
-            break
+    # Exactly the selection load_mt_train uses, so the inspector always
+    # reflects the real training set; the kept rows carry laser_score.
+    rows, n_dup = select_top_n_unique(rank_by_laser(raw), cfg.n_train_pairs)
+    kept = [(r["laser_score"], r["translation"]["eng"].strip(), r["translation"]["xho"].strip())
+            for r in rows]
 
     sc = np.array([k[0] for k in kept])
     print("=" * 78)

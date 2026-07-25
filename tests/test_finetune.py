@@ -48,12 +48,15 @@ def test_d2t_yaml_still_loads():
 
 # ---- FIX 2: dedupe-then-top-N selection ----
 
+def _pairs_of(kept):
+    return [(p["eng"], p["xho"]) for p in kept]
+
+
 def test_select_skips_exact_duplicates():
     # scores [5,4,4,3]; items 2,3 are exact dups of item 1 -> top-2 = [1,4].
     ranked = _pairs(("A", "a"), ("A", "a"), ("A", "a"), ("B", "b"))
-    src, tgt, n_dup = select_top_n_unique(ranked, 2)
-    assert src == ["A", "B"]
-    assert tgt == ["a", "b"]
+    kept, n_dup = select_top_n_unique(ranked, 2)
+    assert _pairs_of(kept) == [("A", "a"), ("B", "b")]
     assert n_dup == 2
 
 
@@ -62,10 +65,18 @@ def test_select_is_deterministic():
     assert select_top_n_unique(ranked, 3) == select_top_n_unique(ranked, 3)
 
 
+def test_select_carries_extra_fields():
+    # kept items keep their extra keys (e.g. a score), for the inspector.
+    ranked = [{"eng": "A", "xho": "a", "laser_score": 1.9},
+              {"eng": "B", "xho": "b", "laser_score": 1.5}]
+    kept, _ = select_top_n_unique(ranked, 2)
+    assert [r["laser_score"] for r in kept] == [1.9, 1.5]
+
+
 def test_select_skips_empty_sides():
     ranked = _pairs(("", "a"), ("A", "a"), ("B", ""), ("C", "c"))
-    src, _, _ = select_top_n_unique(ranked, 2)
-    assert src == ["A", "C"]
+    kept, _ = select_top_n_unique(ranked, 2)
+    assert [p["eng"] for p in kept] == ["A", "C"]
 
 
 def test_select_raises_when_too_few_unique():
