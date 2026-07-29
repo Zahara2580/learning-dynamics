@@ -84,9 +84,10 @@ def series(points: dict[int, float], max_step: int | None) -> tuple[list[int], l
     return steps, [points[s] for s in steps]
 
 
-def draw(curves: dict[str, dict[int, float]], title: str, ylabel: str,
+def draw(curves: dict[str, dict[int, float]], title: str,
          path: Path, smooth: int, max_step: int | None, marker: bool) -> None:
-    """One figure; one line per model in curves."""
+    """One figure; one line per model in curves. Titles stay short - the
+    filename records whether it is the normalised or raw variant."""
     figure, axis = plt.subplots(figsize=(9, 5))
     for model, points in curves.items():
         steps, values = series(points, max_step)
@@ -95,10 +96,11 @@ def draw(curves: dict[str, dict[int, float]], title: str, ylabel: str,
         axis.plot(steps, rolling_mean(values, smooth), color=COLOURS[model],
                   marker="o" if marker else None, markersize=3, linewidth=1.4, label=model)
     axis.set_xlabel("CPT step")
-    axis.set_ylabel(ylabel)
+    axis.set_ylabel("Loss")
     axis.set_title(title)
     axis.grid(alpha=0.3)
-    axis.legend()
+    if len(curves) > 1:  # on a single-model plot the title already names it
+        axis.legend()
     figure.tight_layout()
     figure.savefig(path, dpi=150)
     plt.close(figure)
@@ -129,23 +131,19 @@ def main() -> None:
     if not raw_train:
         raise SystemExit(f"no metrics files found under {root}")
 
-    smoothed = f", smoothed over {args.smooth} logs" if args.smooth > 1 else ""
     panels = [
-        ("train_loss_normalised", norm_train, "training loss (per-batch mean)",
-         f"CPT training loss, normalised{smoothed}", args.smooth, False),
-        ("train_loss_raw", raw_train, "training loss (summed over window)",
-         f"CPT training loss, raw as logged{smoothed}", args.smooth, False),
-        ("eval_loss", evals, "validation loss", "CPT validation loss", 1, True),
+        ("train_loss_normalised", norm_train, "Training loss", args.smooth, False),
+        ("train_loss_raw", raw_train, "Training loss", args.smooth, False),
+        ("eval_loss", evals, "Validation loss", 1, True),
     ]
 
-    for prefix, data, ylabel, title, smooth, marker in panels:
+    for prefix, data, title, smooth, marker in panels:
         # one figure per model
         for model, points in data.items():
-            draw({model: points}, f"{title} - {model}", ylabel,
+            draw({model: points}, f"{title} for {model}",
                  output_dir / f"{prefix}_{model}.png", smooth, args.max_step, marker)
         # all models together
-        draw(data, f"{title} - all models", ylabel,
-             output_dir / f"{prefix}_all.png", smooth, args.max_step, marker)
+        draw(data, title, output_dir / f"{prefix}_all.png", smooth, args.max_step, marker)
 
 
 if __name__ == "__main__":
