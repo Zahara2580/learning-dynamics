@@ -1,0 +1,152 @@
+"""
+CPT learning curves from the metrics_*.jsonl files.
+
+Writes, per model and combined:
+    train_loss_normalised_*   train loss / accumulation steps (comparable across models)
+    train_loss_raw_*          train loss exactly as HF logged it (summed over the window)
+    eval_loss_*               validation loss (already a correct mean - never normalised)
+
+Chained jobs resume from the last checkpoint, so steps between that
+checkpoint and the crash are logged twice. Dedupe keeps the LAST entry
+per step: the file is append-ordered, so the final occurrence belongs to
+the run that continued to 10k.
+
+Usage:
+    uv run python3 -m src.pretraining.plot_cpt_curves
+    uv run python3 -m src.pretraining.plot_cpt_curves --smooth 1 --max-step 10000
+"""
+
+import argparse
+import json
+from argparse import Namespace
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+
+# model -> (metrics filename, gradient accumulation steps of the winning arm)
+MODELS = {
+    "t5": ("t5/metrics_t5_lafand_bs8.jsonl", 128),
+    "byt5": ("byt5/metrics_byt5_lafand_bs4.jsonl", 256),
+    "nguni-byt5": ("nguni-byt5/metrics_nguni-byt5_lafand_bs4.jsonl", 256),
+}
+COLOURS = {m: f"C{i}" for i, m in enumerate(MODELS)}
+
+
+def parse_args() -> Namespace:
+    parser = argparse.ArgumentParser(description="Plot CPT train/eval loss curves.")
+    parser.add_argument("--results-root", type=str, default="/scratch/rmdrak003/results")
+    parser.add_argument("--output-dir", type=str, default="results/cpt_plots")
+    parser.add_argument("--smooth", type=int, default=20,
+                        help="Rolling-mean window for train loss (1 = raw).")
+    parser.add_argument("--max-step", type=int, default=None, help="Truncate the x-axis.")
+    return parser.parse_args()
+
+
+def load_metrics(path: Path) -> tuple[dict[int, float], dict[int, float], dict]:
+    """Read one metrics file into {step: loss} for train and eval; later entries win."""
+    train, evals = {}, {}
+    n_lines, dup_train, dup_eval = 0, 0, 0
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        step = row.get("step")
+        if step is None:
+            continue
+        n_lines += 1
+        if "loss" in row:
+            dup_train += step in train
+            train[step] = row["loss"]
+        if "eval_loss" in row:
+            dup_eval += step in evals
+            evals[step] = row["eval_loss"]
+    stats = {"lines": n_lines, "train_pts": len(train), "eval_pts": len(evals),
+             "train_overlap": dup_train, "eval_overlap": dup_eval}
+    return train, evals, stats
+
+
+def rolling_mean(values: list[float], window: int) -> list[float]:
+    if window <= 1:
+        return values
+    return [sum(values[max(0, i - window + 1):i + 1]) / len(values[max(0, i - window + 1):i + 1])
+            for i in range(len(values))]
+
+
+def series(points: dict[int, float], max_step: int | None) -> tuple[list[int], list[float]]:
+    steps = sorted(s for s in points if max_step is None or s <= max_step)
+    return steps, [points[s] for s in steps]
+
+
+def draw(curves: dict[str, dict[int, float]], title: str, ylabel: str,
+         path: Path, smooth: int, max_step: int | None, marker: bool) -> None:
+    """One figure; one line per model in curves."""
+    figure, axis = plt.subplots(figsize=(9, 5))
+    for model, points in curves.items():
+        steps, values = series(points, max_step)
+        if not steps:
+            continue
+        axis.plot(steps, rolling_mean(values, smooth), color=COLOURS[model],
+                  marker="o" if marker else None, markersize=3, linewidth=1.4, label=model)
+    axis.set_xlabel("CPT step")
+    axis.set_ylabel(ylabel)
+    axis.set_title(title)
+    axis.grid(alpha=0.3)
+    axis.legend()
+    figure.tight_layout()
+    figure.savefig(path, dpi=150)
+    plt.close(figure)
+    print(f"wrote {path}")
+
+
+def main() -> None:
+    args = parse_args()
+    root = Path(args.results_root)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    raw_train, norm_train, evals = {}, {}, {}
+    print(f"{'model':>12} {'lines':>7} {'train':>7} {'eval':>6} {'tr_dup':>7} {'ev_dup':>7} {'last':>7}")
+    for model, (rel, accum) in MODELS.items():
+        path = root / rel
+        if not path.exists():
+            print(f"{model:>12}   MISSING {path}")
+            continue
+        train, ev, st = load_metrics(path)
+        raw_train[model] = train
+        norm_train[model] = {s: v / accum for s, v in train.items()}
+        evals[model] = ev
+        last = max(max(train, default=0), max(ev, default=0))
+        print(f"{model:>12} {st['lines']:>7} {st['train_pts']:>7} {st['eval_pts']:>6} "
+              f"{st['train_overlap']:>7} {st['eval_overlap']:>7} {last:>7}")
+
+    if not raw_train:
+        raise SystemExit(f"no metrics files found under {root}")
+
+    smoothed = f", smoothed over {args.smooth} logs" if args.smooth > 1 else ""
+    panels = [
+        ("train_loss_normalised", norm_train, "training loss (per-batch mean)",
+         f"CPT training loss, normalised{smoothed}", args.smooth, False),
+        ("train_loss_raw", raw_train, "training loss (summed over window)",
+         f"CPT training loss, raw as logged{smoothed}", args.smooth, False),
+        ("eval_loss", evals, "validation loss", "CPT validation loss", 1, True),
+    ]
+
+    for prefix, data, ylabel, title, smooth, marker in panels:
+        # one figure per model
+        for model, points in data.items():
+            draw({model: points}, f"{title} - {model}", ylabel,
+                 output_dir / f"{prefix}_{model}.png", smooth, args.max_step, marker)
+        # all models together
+        draw(data, f"{title} - all models", ylabel,
+             output_dir / f"{prefix}_all.png", smooth, args.max_step, marker)
+
+
+if __name__ == "__main__":
+    main()
