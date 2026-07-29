@@ -29,7 +29,10 @@ class FinetuneConfig:
         task: Task identifier, "d2t" (data-to-text, T2X dataset) or "mt".
         data_dir: Directory holding the task's data files.
         learning_rate: Finetuning learning rate (locked per task).
-        batch_size: Per-device training batch size (locked per task).
+        batch_size: Per-device micro-batch. With
+            gradient_accumulation_steps this multiplies to the paper's
+            batch size; split purely to fit memory.
+        gradient_accumulation_steps: Micro-batches per optimiser step.
         num_epochs: Fixed number of training epochs (locked per task).
         lr_scheduler_type: "constant" for T2X (no warmup, no decay) or
             "linear" for MT (linear decay, no warmup), per the paper.
@@ -68,6 +71,7 @@ class FinetuneConfig:
     num_epochs: int
     lr_scheduler_type: str = "constant"
     warmup_steps: int = 0
+    gradient_accumulation_steps: int = 1
     eval_batch_size: int = 8
     max_source_length: int = 512
     max_target_length: int = 256
@@ -88,6 +92,10 @@ class FinetuneConfig:
             raise ValueError(f"learning_rate must be positive, got {self.learning_rate}")
         if self.batch_size <= 0:
             raise ValueError(f"batch_size must be positive, got {self.batch_size}")
+        if self.gradient_accumulation_steps <= 0:
+            raise ValueError(
+                f"gradient_accumulation_steps must be positive, "
+                f"got {self.gradient_accumulation_steps}")
         if self.num_epochs <= 0:
             raise ValueError(f"num_epochs must be positive, got {self.num_epochs}")
         if self.lr_scheduler_type not in {"constant", "linear"}:
@@ -106,6 +114,11 @@ class FinetuneConfig:
             raise ValueError(
                 f"mt task requires n_train_pairs > 0, got {self.n_train_pairs}"
             )
+
+    @property
+    def effective_batch_size(self) -> int:
+        """Examples per optimiser step - the number the paper specifies."""
+        return self.batch_size * self.gradient_accumulation_steps
 
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "FinetuneConfig":
@@ -141,7 +154,12 @@ class FinetuneConfig:
         payload = {
             k: v for k, v in asdict(self).items()
             if k not in {"work_dir", "results_dir", "data_dir", "eval_batch_size",
-                         "wandb_project"}
+                         "wandb_project",
+                         # split of the effective batch is a memory choice, not
+                         # protocol: 4x4 and 16x1 optimise identically, so the
+                         # product is hashed instead (below).
+                         "batch_size", "gradient_accumulation_steps"}
         }
+        payload["effective_batch_size"] = self.effective_batch_size
         blob = json.dumps(payload, sort_keys=True)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]

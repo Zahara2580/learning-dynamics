@@ -380,10 +380,15 @@ def run_one_checkpoint(
     started = time.time()
 
     tokenizer = AutoTokenizer.from_pretrained(base_model)
-    model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint_path)
+    # fp32 explicitly: CPT saved bf16 checkpoints while the Hub base model is
+    # fp32, so inheriting the checkpoint's dtype would finetune base with fp32
+    # master weights and every CPT checkpoint with bf16 ones - a systematic
+    # base-vs-checkpoint advantage. bf16=True still gives mixed-precision
+    # compute; only the master weights are pinned.
+    model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint_path, dtype=torch.float32)
     logger.info(
         f"loaded {'BASE model' if step == BASE_MODEL_STEP else f'checkpoint-{step}'} "
-        f"weights from {checkpoint_path}")
+        f"weights from {checkpoint_path} (dtype {next(model.parameters()).dtype})")
 
     train_dataset = Seq2SeqDataset(
         data["train_sources"], data["train_targets"], tokenizer,
@@ -398,10 +403,11 @@ def run_one_checkpoint(
         # written, so this run is redone from scratch.
         shutil.rmtree(work_dir)
 
-    # ceil, not floor: the dataloader does not drop the last partial
-    # batch, so flooring would make the MT linear schedule reach zero
-    # before the final optimiser steps and silently stop training them.
-    steps_per_epoch = max(1, math.ceil(len(train_dataset) / cfg.batch_size))
+    # Optimiser steps consume batch_size * accumulation examples. ceil, not
+    # floor: the dataloader does not drop the last partial batch, so
+    # flooring would make the linear schedule reach zero before the final
+    # optimiser steps and silently stop training them.
+    steps_per_epoch = max(1, math.ceil(len(train_dataset) / cfg.effective_batch_size))
     total_steps = steps_per_epoch * cfg.num_epochs
 
     # One run per checkpoint, grouped by model-task so the ~120 runs
@@ -418,6 +424,8 @@ def run_one_checkpoint(
             config={
                 "model": model_name, "ckpt_step": step, "task": cfg.task, "seed": seed,
                 "learning_rate": cfg.learning_rate, "batch_size": cfg.batch_size,
+                "gradient_accumulation_steps": cfg.gradient_accumulation_steps,
+                "effective_batch_size": cfg.effective_batch_size,
                 "num_epochs": cfg.num_epochs, "lr_scheduler_type": cfg.lr_scheduler_type,
                 "num_beams": cfg.num_beams, "max_new_tokens": cfg.max_new_tokens,
                 "n_train_pairs": cfg.n_train_pairs, "config_hash": cfg.hash(),
@@ -428,6 +436,7 @@ def run_one_checkpoint(
     training_args = Seq2SeqTrainingArguments(
         output_dir=str(work_dir),
         per_device_train_batch_size=cfg.batch_size,
+        gradient_accumulation_steps=cfg.gradient_accumulation_steps,
         per_device_eval_batch_size=cfg.eval_batch_size,
         num_train_epochs=cfg.num_epochs,
         eval_strategy="epoch",

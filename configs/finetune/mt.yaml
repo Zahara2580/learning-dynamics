@@ -7,7 +7,10 @@ task: "mt"
 data_dir: "data/finetune/mt"
 
 learning_rate: 1.0e-5
-batch_size: 16
+# Paper's batch 16, split 4x4 so the 1.23B byte models fit in fp32.
+# Mathematically identical; same effective batch for every model.
+batch_size: 4
+gradient_accumulation_steps: 4
 num_epochs: 3
 lr_scheduler_type: "linear"     # linear decay, no warmup
 warmup_steps: 0
@@ -28,7 +31,7 @@ direction_prefix: "Translate English to Xhosa: "
 
 # WMT22 pairs used for training: dedupe exact pairs, take top-N by
 # laser_score. Raisable later if MT needs more data (per supervisor).
-n_train_pairs: 10000
+n_train_pairs: 50000
 
 work_dir: "/scratch/rmdrak003/finetune_work"
 results_dir: "results/finetune"

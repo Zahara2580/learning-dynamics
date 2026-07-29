@@ -52,6 +52,9 @@ module load python/miniconda3-py3.12
 cd /scratch/rmdrak003/learning-dynamics
 uv sync --frozen
 
+# Without this a crashed run still exits 0 and SLURM reports COMPLETED.
+set -e
+
 echo "=========================================================="
 echo "finetune ${MODEL} on ${TASK}  (FULL 20 ckpts)   start $(date -Is)"
 echo "=========================================================="
