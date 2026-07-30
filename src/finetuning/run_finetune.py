@@ -16,6 +16,7 @@ Usage:
 """
 
 import argparse
+import gc
 import json
 import logging
 import math
@@ -533,8 +534,11 @@ def run_one_checkpoint(
             wandb.run.summary[f"test/{k}"] = v
         wandb.finish()
 
-    # Weights are transient. ~5GB per run, ~120 runs.
+    # Weights are transient. ~5GB per run, ~120 runs. gc.collect() matters
+    # here: 20 checkpoints load sequentially in one process, and an fp32
+    # byte model is ~5GB of host RAM that Python is slow to hand back.
     del trainer, model, optimizer, scheduler
+    gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     shutil.rmtree(work_dir, ignore_errors=True)

@@ -2,6 +2,7 @@
 #SBATCH --account=l40sfree
 #SBATCH --partition=l40s
 #SBATCH --nodes=1 --ntasks=1 --gres=gpu:l40s:1
+#SBATCH --mem=64G
 #SBATCH --time=24:00:00
 #SBATCH --job-name="ft-d2t-byt5"
 #SBATCH --mail-user=rmdrak003@myuct.ac.za
