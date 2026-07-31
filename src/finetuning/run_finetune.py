@@ -118,6 +118,9 @@ def parse_args() -> Namespace:
                              "checkpoint, grouped by model-task.")
     parser.add_argument("--wandb-project", type=str, default=None,
                         help="Override the W&B project name from the config.")
+    parser.add_argument("--results-dir", type=str, default=None,
+                        help="Override results_dir, e.g. to keep a variance probe "
+                             "separate from the main sweep.")
     return parser.parse_args()
 
 
@@ -550,6 +553,11 @@ def main() -> None:
     """Walk the checkpoints, finetuning and scoring each in turn."""
     args = parse_args()
     cfg = FinetuneConfig.from_yaml(args.config)
+    if args.results_dir:
+        # Excluded from cfg.hash(), so the protocol is unchanged - only
+        # where the rows land.
+        cfg.results_dir = args.results_dir
+        logger.info(f"results going to {cfg.results_dir}")
 
     model_config = ModelConfig.from_yaml(Path(args.model_config_dir) / f"{args.model}.yaml")
     base_model = args.base_model or model_config.model_name_or_path
