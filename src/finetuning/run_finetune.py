@@ -16,6 +16,7 @@ Usage:
 """
 
 import argparse
+import collections
 import gc
 import json
 import logging
@@ -479,6 +480,15 @@ def run_one_checkpoint(
     ]
     best_epoch = (val_losses.index(min(val_losses)) + 1) if val_losses else None
 
+    # Training loss averaged per epoch, from the same history. Kept so the
+    # train-vs-eval gap (overfitting, instability) is visible after the fact
+    # without re-reading SLURM logs.
+    per_epoch = collections.defaultdict(list)
+    for entry in trainer.state.log_history:
+        if "loss" in entry and "epoch" in entry:
+            per_epoch[math.ceil(entry["epoch"])].append(entry["loss"])
+    train_losses = [sum(v) / len(v) for _, v in sorted(per_epoch.items())]
+
     gen_started = time.time()
     predictions = generate_predictions(trainer.model, tokenizer, data["test_sources"], cfg)
     gen_runtime = time.time() - gen_started
@@ -508,6 +518,7 @@ def run_one_checkpoint(
         "generation": generation,
         "sacrebleu_signatures": scored["sacrebleu_signatures"],
         "val_loss_per_epoch": val_losses,
+        "train_loss_per_epoch": train_losses,
         "best_epoch": best_epoch,
         "train_runtime_s": round(train_output.metrics.get("train_runtime", 0.0), 1),
         "generate_runtime_s": round(gen_runtime, 1),

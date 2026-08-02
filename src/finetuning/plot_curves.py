@@ -1,17 +1,23 @@
 """
-Learning-dynamics curves: one PNG per (task, metric).
+Learning-dynamics curves: downstream metric vs CPT step.
 
-Base (step 0) is drawn as a dashed horizontal reference, not a point on
-the curve - it is the un-adapted starting model, not a CPT checkpoint.
-Log x-axis so the dense 100-1000 checkpoints are readable.
+Writes one figure per (task, metric, model) on its own y-scale, plus a
+combined figure per (task, metric). The per-model figures are the ones to
+read for trends - on a shared axis a 1-point trend inside a 25-point range
+looks flat.
+
+Base (step 0) is a dashed horizontal reference, not a point on the curve:
+it is the un-adapted starting model, not a CPT checkpoint.
 
 Usage:
     uv run python3 -m src.finetuning.plot_curves
-    uv run python3 -m src.finetuning.plot_curves --results r.jsonl --output-dir plots
+    uv run python3 -m src.finetuning.plot_curves --results results/variance/results.jsonl \
+        --output-dir results/variance/plots
 """
 
 import argparse
 import json
+from argparse import Namespace
 from collections import defaultdict
 from pathlib import Path
 
@@ -22,17 +28,55 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 METRICS = ["bleu", "chrf", "chrf_pp", "ter"]
 LABELS = {"bleu": "BLEU", "chrf": "chrF", "chrf_pp": "chrF++", "ter": "TER"}
-# Headline metric per task, per the proposal.
 HEADLINE = {"d2t": "chrf", "mt": "bleu"}
+MODEL_ORDER = ["t5", "byt5", "nguni-byt5"]
 
 
-def main() -> None:
+def parse_args() -> Namespace:
     parser = argparse.ArgumentParser(description="Plot learning-dynamics curves.")
     parser.add_argument("--results", type=str, default="results/finetune/results.jsonl")
     parser.add_argument("--output-dir", type=str, default="results/finetune/plots")
     parser.add_argument("--seed", type=int, default=42)
-    args = parser.parse_args()
+    return parser.parse_args()
 
+
+def colour(model: str) -> str:
+    return f"C{MODEL_ORDER.index(model)}" if model in MODEL_ORDER else "C7"
+
+
+def draw(curves: dict[str, list[tuple[int, float]]], title: str, ylabel: str, path: Path) -> None:
+    """One figure; one line per model, each with its own base reference."""
+    figure, axis = plt.subplots(figsize=(8, 5))
+    for model, points in sorted(curves.items(), key=lambda kv: MODEL_ORDER.index(kv[0])
+                                if kv[0] in MODEL_ORDER else 99):
+        points = sorted(points)
+        base = [v for s, v in points if s == 0]
+        cpt = [(s, v) for s, v in points if s > 0]
+        c = colour(model)
+        if base:
+            axis.axhline(base[0], color=c, linestyle="--", linewidth=1.2, alpha=0.8)
+            if cpt:
+                axis.text(cpt[-1][0], base[0], f" {model} base", color=c,
+                          va="bottom", ha="right", fontsize=8)
+        if cpt:
+            axis.plot([s for s, _ in cpt], [v for _, v in cpt],
+                      marker="o", markersize=4, color=c, label=model)
+
+    axis.set_xscale("log")
+    axis.set_xlabel("CPT step (log scale); dashed = un-adapted base")
+    axis.set_ylabel(ylabel)
+    axis.set_title(title)
+    axis.grid(alpha=0.3, which="both")
+    if len(curves) > 1:
+        axis.legend(fontsize=9)
+    figure.tight_layout()
+    figure.savefig(path, dpi=150)
+    plt.close(figure)
+    print(f"wrote {path}")
+
+
+def main() -> None:
+    args = parse_args()
     rows = [json.loads(line) for line in Path(args.results).read_text().splitlines() if line.strip()]
     rows = [r for r in rows if r["seed"] == args.seed]
     if not rows:
@@ -49,33 +93,16 @@ def main() -> None:
                     (row["ckpt_step"], row["metrics"][metric]))
 
     for (task, metric), by_model in sorted(series.items()):
-        figure, axis = plt.subplots(figsize=(8, 5))
-        for i, (model, points) in enumerate(sorted(by_model.items())):
-            points.sort()
-            colour = f"C{i}"
-            base = [v for s, v in points if s == 0]
-            cpt = [(s, v) for s, v in points if s > 0]
-            if base:
-                axis.axhline(base[0], color=colour, linestyle="--", linewidth=1.2, alpha=0.8)
-                axis.text(cpt[-1][0] if cpt else 1, base[0], f" {model} base",
-                          color=colour, va="bottom", ha="right", fontsize=8)
-            if cpt:
-                axis.plot([s for s, _ in cpt], [v for _, v in cpt],
-                          marker="o", markersize=4, color=colour, label=model)
-
-        axis.set_xscale("log")
-        axis.set_xlabel("CPT step (log scale); dashed line = un-adapted base model")
-        axis.set_ylabel(LABELS[metric])
-        star = "  [headline metric]" if HEADLINE.get(task) == metric else ""
-        axis.set_title(f"{task.upper()}: {LABELS[metric]} vs CPT step{star}")
-        axis.grid(alpha=0.3, which="both")
-        axis.legend(loc="best", fontsize=9)
-        figure.tight_layout()
-
-        path = output_dir / f"{task}_{metric}.png"
-        figure.savefig(path, dpi=150)
-        plt.close(figure)
-        print(f"wrote {path}")
+        label = LABELS[metric]
+        star = "  [headline]" if HEADLINE.get(task) == metric else ""
+        # per model, own y-scale - read these for trends
+        for model, points in by_model.items():
+            draw({model: points}, f"{task.upper()} {label} - {model}{star}", label,
+                 output_dir / f"{task}_{metric}_{model}.png")
+        # all models together - for cross-model comparison only
+        if len(by_model) > 1:
+            draw(dict(by_model), f"{task.upper()} {label} - all models{star}", label,
+                 output_dir / f"{task}_{metric}_all.png")
 
 
 if __name__ == "__main__":
