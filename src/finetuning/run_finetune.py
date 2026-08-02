@@ -39,6 +39,7 @@ from transformers import (
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
     get_constant_schedule,
+    get_constant_schedule_with_warmup,
     get_linear_schedule_with_warmup,
     set_seed,
 )
@@ -63,6 +64,10 @@ logger = logging.getLogger(__name__)
 # through exactly the same finetune-and-score path as every checkpoint,
 # so it is the anchor the whole curve is measured against.
 BASE_MODEL_STEP = 0
+
+# Which finetuned model gets evaluated: the best-validation epoch and the
+# final epoch. Both come from one training run.
+SELECTIONS = ("best_epoch", "last_epoch")
 
 
 class Seq2SeqDataset(TorchDataset):
@@ -186,7 +191,7 @@ def load_completed_keys(results_path: Path) -> set[tuple]:
     warning rather than crashing the sweep.
 
     :param results_path: Path to results.jsonl.
-    :return: Set of (model, ckpt_step, task, seed) tuples.
+    :return: Set of (model, ckpt_step, task, seed, selection) tuples.
     """
     if not results_path.exists():
         return set()
@@ -199,7 +204,8 @@ def load_completed_keys(results_path: Path) -> set[tuple]:
                 continue
             try:
                 row = json.loads(line)
-                keys.add((row["model"], row["ckpt_step"], row["task"], row["seed"]))
+                keys.add((row["model"], row["ckpt_step"], row["task"], row["seed"],
+                          row.get("selection", "best_epoch")))
             except (json.JSONDecodeError, KeyError):
                 logger.warning(f"skipping malformed results line {lineno} in {results_path}")
     return keys
@@ -290,12 +296,17 @@ def build_optimizer_and_scheduler(model, cfg: FinetuneConfig, num_training_steps
         warmup_init=False,
     )
 
+    warmup = cfg.warmup_steps or round(cfg.warmup_ratio * num_training_steps)
     if cfg.lr_scheduler_type == "linear":
         scheduler = get_linear_schedule_with_warmup(
-            optimizer, num_warmup_steps=0, num_training_steps=num_training_steps)
+            optimizer, num_warmup_steps=warmup, num_training_steps=num_training_steps)
+    elif warmup:
+        scheduler = get_constant_schedule_with_warmup(optimizer, num_warmup_steps=warmup)
     else:
         scheduler = get_constant_schedule(optimizer)
 
+    logger.info(f"schedule: {cfg.lr_scheduler_type}, {warmup} warmup of "
+                f"{num_training_steps} steps, peak lr {cfg.learning_rate}")
     return optimizer, scheduler
 
 
@@ -358,7 +369,7 @@ def run_one_checkpoint(
     step: int, checkpoint_path: str, base_model: str,
     cfg: FinetuneConfig, data: dict, model_name: str, seed: int,
     use_wandb: bool = False, wandb_project: str = "", wandb_job_type: str = "sweep",
-) -> dict:
+) -> list[dict]:
     """
     Finetune one checkpoint, score it, and delete its weights.
 
@@ -379,7 +390,7 @@ def run_one_checkpoint(
     :param use_wandb: Stream curves to W&B, one run per checkpoint.
     :param wandb_project: W&B project name.
     :param wandb_job_type: "pilot" or "sweep", for filtering.
-    :return: The result row to append to results.jsonl.
+    :return: One results row per selection in SELECTIONS.
     """
     set_seed(seed)
     started = time.time()
@@ -446,7 +457,7 @@ def run_one_checkpoint(
         num_train_epochs=cfg.num_epochs,
         eval_strategy="epoch",
         save_strategy="epoch",
-        save_total_limit=1,
+        save_total_limit=2,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         greater_is_better=False,
@@ -489,75 +500,106 @@ def run_one_checkpoint(
             per_epoch[math.ceil(entry["epoch"])].append(entry["loss"])
     train_losses = [sum(v) / len(v) for _, v in sorted(per_epoch.items())]
 
-    gen_started = time.time()
-    predictions = generate_predictions(trainer.model, tokenizer, data["test_sources"], cfg)
-    gen_runtime = time.time() - gen_started
+    # save_total_limit=2 with load_best_model_at_end keeps exactly the best
+    # (HF protects it from rotation) and the newest, so both selections are
+    # available without keeping every epoch on disk.
+    best_dir = trainer.state.best_model_checkpoint
+    saved = sorted((p for p in work_dir.glob("checkpoint-*") if p.is_dir()),
+                   key=lambda p: int(p.name.split("-")[1]))
+    last_dir = str(saved[-1]) if saved else None
+    best_is_last = (not best_dir) or (not last_dir) or Path(best_dir).name == Path(last_dir).name
+    device = next(trainer.model.parameters()).device
 
-    scored = score_corpus(predictions, data["test_references"])
-
-    # Audit trail: the decoding settings actually pinned, plus what this
-    # checkpoint's own generation_config carried (so a settings asymmetry
-    # between base and CPT checkpoints is detectable after the fact).
-    gen_cfg = trainer.model.generation_config
-    generation = {
-        "pinned": {"num_beams": cfg.num_beams, "max_new_tokens": cfg.max_new_tokens,
-                   "do_sample": False, "length_penalty": 1.0, "early_stopping": False,
-                   "no_repeat_ngram_size": 0, "repetition_penalty": 1.0},
-        "checkpoint_defaults": {k: getattr(gen_cfg, k, None) for k in
-                                ["length_penalty", "early_stopping", "no_repeat_ngram_size",
-                                 "repetition_penalty", "num_beams", "max_length"]},
-    }
-
-    row = {
-        "model": model_name,
-        "ckpt_step": step,
-        "task": cfg.task,
-        "seed": seed,
-        "metrics": scored["metrics"],
-        "diagnostics": scored["diagnostics"],
-        "generation": generation,
-        "sacrebleu_signatures": scored["sacrebleu_signatures"],
-        "val_loss_per_epoch": val_losses,
-        "train_loss_per_epoch": train_losses,
-        "best_epoch": best_epoch,
+    common = {
+        "model": model_name, "ckpt_step": step, "task": cfg.task, "seed": seed,
+        "val_loss_per_epoch": val_losses, "train_loss_per_epoch": train_losses,
+        "best_epoch": best_epoch, "n_epochs": cfg.num_epochs,
+        "best_is_last": best_is_last,
         "train_runtime_s": round(train_output.metrics.get("train_runtime", 0.0), 1),
-        "generate_runtime_s": round(gen_runtime, 1),
-        "total_runtime_s": round(time.time() - started, 1),
         "n_train_examples": len(train_dataset),
-        "n_test_examples": len(predictions),
         "checkpoint_path": checkpoint_path,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
         "config_hash": cfg.hash(),
     }
-
-    # Predictions are permanent: every metric in the thesis can be
-    # recomputed from these without re-running a single GPU hour. JSONL,
-    # not newline-joined text - byte models can emit newlines.
+    pinned = {"num_beams": cfg.num_beams, "max_new_tokens": cfg.max_new_tokens,
+              "do_sample": False, "length_penalty": 1.0, "early_stopping": False,
+              "no_repeat_ngram_size": 0, "repetition_penalty": 1.0}
     pred_dir = Path(cfg.results_dir) / "predictions"
     pred_dir.mkdir(parents=True, exist_ok=True)
-    pred_path = pred_dir / f"{model_name}_{step}_{cfg.task}_{seed}.jsonl"
-    write_predictions(pred_path, predictions)
 
-    # Final test metrics into the run summary, so a cross-checkpoint panel
-    # (x=ckpt_step, y=test/chrf) can be built from the group. Then close
-    # the run before the next checkpoint reuses the process.
+    def build_row(selection: str, predictions: list[str], gen_cfg, gen_runtime: float) -> dict:
+        """Score one set of predictions and assemble its results row."""
+        scored = score_corpus(predictions, data["test_references"])
+        row = dict(common)
+        row.update({
+            "selection": selection,
+            "metrics": scored["metrics"],
+            "diagnostics": scored["diagnostics"],
+            "sacrebleu_signatures": scored["sacrebleu_signatures"],
+            "generation": {
+                "pinned": pinned,
+                "checkpoint_defaults": {k: getattr(gen_cfg, k, None) for k in
+                                        ["length_penalty", "early_stopping",
+                                         "no_repeat_ngram_size", "repetition_penalty",
+                                         "num_beams", "max_length"]},
+            },
+            "generate_runtime_s": round(gen_runtime, 1),
+            "total_runtime_s": round(time.time() - started, 1),
+            "n_test_examples": len(predictions),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        write_predictions(
+            pred_dir / f"{model_name}_{step}_{cfg.task}_{seed}_{selection}.jsonl", predictions)
+        logger.info(f"  {selection}: BLEU {scored['metrics']['bleu']:.2f} "
+                    f"chrF {scored['metrics']['chrf']:.2f}")
+        return row
+
+    # load_best_model_at_end=True means the in-memory model is already the
+    # best-validation epoch.
+    gen_started = time.time()
+    best_preds = generate_predictions(trainer.model, tokenizer, data["test_sources"], cfg)
+    rows = [build_row("best_epoch", best_preds, trainer.model.generation_config,
+                      time.time() - gen_started)]
+
+    if best_is_last:
+        # Same weights: reuse the predictions rather than decoding an
+        # identical model twice.
+        rows.append(build_row("last_epoch", best_preds, trainer.model.generation_config, 0.0))
+        logger.info("  last_epoch == best_epoch (validation minimum was the final epoch)")
+        del trainer, model, optimizer, scheduler
+    else:
+        # Free the trainer first: an fp32 byte model plus its optimiser state
+        # and a second copy would not fit alongside each other.
+        del trainer, model, optimizer, scheduler
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        last_model = AutoModelForSeq2SeqLM.from_pretrained(
+            last_dir, dtype=torch.float32).to(device)
+        last_model.eval()
+        gen_started = time.time()
+        last_preds = generate_predictions(last_model, tokenizer, data["test_sources"], cfg)
+        rows.append(build_row("last_epoch", last_preds, last_model.generation_config,
+                              time.time() - gen_started))
+        del last_model
+
     if use_wandb:
         import wandb
         wandb.run.summary["best_epoch"] = best_epoch
-        for k, v in scored["metrics"].items():
-            wandb.run.summary[f"test/{k}"] = v
+        wandb.run.summary["best_is_last"] = best_is_last
+        for row in rows:
+            for k, v in row["metrics"].items():
+                wandb.run.summary[f"{row['selection']}/{k}"] = v
         wandb.finish()
 
-    # Weights are transient. ~5GB per run, ~120 runs. gc.collect() matters
-    # here: 20 checkpoints load sequentially in one process, and an fp32
-    # byte model is ~5GB of host RAM that Python is slow to hand back.
-    del trainer, model, optimizer, scheduler
+    # Weights are transient. ~5GB per run. gc.collect() matters here: 20
+    # checkpoints load sequentially in one process, and an fp32 byte model is
+    # ~5GB of host RAM that Python is slow to hand back.
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     shutil.rmtree(work_dir, ignore_errors=True)
 
-    return row
+    return rows
 
 
 def main() -> None:
@@ -597,8 +639,10 @@ def main() -> None:
     results_path = Path(cfg.results_dir) / "results.jsonl"
     completed = load_completed_keys(results_path)
 
+    # both selections must be present for a checkpoint to count as done
     pending = [(s, p) for s, p in runs
-               if (args.model, s, cfg.task, args.seed) not in completed]
+               if not all((args.model, s, cfg.task, args.seed, sel) in completed
+                          for sel in SELECTIONS)]
     logger.info(
         f"{len(runs)} requested, {len(runs) - len(pending)} already done, {len(pending)} to run"
     )
@@ -627,15 +671,13 @@ def main() -> None:
     for index, (step, path) in enumerate(pending, start=1):
         logger.info(f"=== [{index}/{len(pending)}] {args.model} step {step} ({cfg.task}) ===")
         started = time.time()
-        row = run_one_checkpoint(
+        rows = run_one_checkpoint(
             step, path, base_model, cfg, data, args.model, args.seed,
             use_wandb=args.wandb, wandb_project=wandb_project, wandb_job_type=wandb_job_type)
-        append_result(results_path, row)
-        logger.info(
-            f"=== step {step} done in {time.time() - started:.0f}s | "
-            f"BLEU {row['metrics']['bleu']:.2f} chrF {row['metrics']['chrf']:.2f} "
-            f"chrF++ {row['metrics']['chrf_pp']:.2f} ==="
-        )
+        for row in rows:
+            append_result(results_path, row)
+        logger.info(f"=== step {step} done in {time.time() - started:.0f}s, "
+                    f"{len(rows)} rows ===")
 
     logger.info(f"sweep complete: {results_path}")
 

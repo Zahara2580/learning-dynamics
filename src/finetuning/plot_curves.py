@@ -43,23 +43,31 @@ def colour(model: str) -> str:
     return f"C{MODEL_ORDER.index(model)}" if model in MODEL_ORDER else "C7"
 
 
+# best_epoch vs last_epoch share a model's colour; the line style separates them
+STYLES = {"best_epoch": "-", "last_epoch": ":"}
+
+
 def draw(curves: dict[str, list[tuple[int, float]]], title: str, ylabel: str, path: Path) -> None:
     """One figure; one line per model, each with its own base reference."""
     figure, axis = plt.subplots(figsize=(8, 5))
-    for model, points in sorted(curves.items(), key=lambda kv: MODEL_ORDER.index(kv[0])
-                                if kv[0] in MODEL_ORDER else 99):
+    drawn_base = set()
+    for key, points in sorted(curves.items(), key=lambda kv: (
+            MODEL_ORDER.index(kv[0][0]) if kv[0][0] in MODEL_ORDER else 99, kv[0][1])):
+        model, selection = key
         points = sorted(points)
         base = [v for s, v in points if s == 0]
         cpt = [(s, v) for s, v in points if s > 0]
         c = colour(model)
-        if base:
+        if base and model not in drawn_base:
+            drawn_base.add(model)
             axis.axhline(base[0], color=c, linestyle="--", linewidth=1.2, alpha=0.8)
             if cpt:
                 axis.text(cpt[-1][0], base[0], f" {model} base", color=c,
                           va="bottom", ha="right", fontsize=8)
         if cpt:
-            axis.plot([s for s, _ in cpt], [v for _, v in cpt],
-                      marker="o", markersize=4, color=c, label=model)
+            label = model if selection is None else f"{model} ({selection})"
+            axis.plot([s for s, _ in cpt], [v for _, v in cpt], marker="o", markersize=4,
+                      color=c, linestyle=STYLES.get(selection, "-"), label=label)
 
     axis.set_xscale("log")
     axis.set_xlabel("CPT step")
@@ -84,21 +92,27 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # None when a file predates the selection field, so old results still plot
+    selections = {r.get("selection") for r in rows}
+    multi = len(selections) > 1
     series = defaultdict(lambda: defaultdict(list))
     for row in rows:
+        sel = row.get("selection") if multi else None
         for metric in METRICS:
             if metric in row["metrics"]:
-                series[(row["task"], metric)][row["model"]].append(
+                series[(row["task"], metric)][(row["model"], sel)].append(
                     (row["ckpt_step"], row["metrics"][metric]))
 
     for (task, metric), by_model in sorted(series.items()):
         label = LABELS[metric]
         # per model, own y-scale - read these for trends
-        for model, points in by_model.items():
-            draw({model: points}, f"{task.upper()} {label} for {model}", label,
+        models = {k[0] for k in by_model}
+        for model in sorted(models):
+            subset = {k: v for k, v in by_model.items() if k[0] == model}
+            draw(subset, f"{task.upper()} {label} for {model}", label,
                  output_dir / f"{task}_{metric}_{model}.png")
         # all models together - for cross-model comparison only
-        if len(by_model) > 1:
+        if len(models) > 1:
             draw(dict(by_model), f"{task.upper()} {label}", label,
                  output_dir / f"{task}_{metric}_all.png")
 

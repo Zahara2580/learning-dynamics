@@ -44,29 +44,31 @@ def main() -> None:
 
     groups = defaultdict(list)
     for r in rows:
-        groups[(r["model"], r["task"])].append(r)
+        groups[(r["model"], r["task"], r.get("selection", "best_epoch"))].append(r)
 
     print(f"{len(rows)} rows across {len(groups)} (model, task) groups\n")
 
-    for (model, task), rs in sorted(groups.items()):
+    for (model, task, selection), rs in sorted(groups.items()):
         rs.sort(key=lambda r: r["ckpt_step"])
         base = next((r for r in rs if r["ckpt_step"] == 0), None)
 
         print("=" * 96)
-        print(f"{model}  /  {task}      {len(rs)}/20 checkpoints")
+        print(f"{model}  /  {task}  /  {selection}      {len(rs)}/20 checkpoints")
         print("=" * 96)
         print(f"{'step':>7} {'val_loss':>9} {'chrF':>7} {'BLEU':>7} {'chrF++':>7} {'TER':>7} "
-              f"{'dchrF':>7} {'dBLEU':>7} {'ep':>3} {'empty':>6} {'len_r':>6}")
+              f"{'dchrF':>7} {'dBLEU':>7} {'ep':>3} {'empty%':>7} {'rep%':>6} {'len_r':>6}")
 
         for r in rs:
             m, d = r["metrics"], r["diagnostics"]
             val = min(r["val_loss_per_epoch"]) if r["val_loss_per_epoch"] else float("nan")
             dchrf = m["chrf"] - base["metrics"]["chrf"] if base else float("nan")
             dbleu = m["bleu"] - base["metrics"]["bleu"] if base else float("nan")
+            n = max(1, d.get("n_preds", 1))
             star = "  <- base" if r["ckpt_step"] == 0 else ""
             print(f"{r['ckpt_step']:>7} {val:>9.4f} {m['chrf']:>7.2f} {m['bleu']:>7.2f} "
                   f"{m['chrf_pp']:>7.2f} {m['ter']:>7.2f} {dchrf:>+7.2f} {dbleu:>+7.2f} "
-                  f"{r['best_epoch'] or 0:>3} {d['n_empty']:>6} {d['pred_ref_len_ratio']:>6.2f}{star}")
+                  f"{r['best_epoch'] or 0:>3} {100 * d['n_empty'] / n:>7.2f} "
+                  f"{100 * d['n_repetitive'] / n:>6.2f} {d['pred_ref_len_ratio']:>6.2f}{star}")
 
         # Trend: does the metric move with CPT step (excluding base)?
         cpt = [r for r in rs if r["ckpt_step"] > 0]
@@ -95,9 +97,15 @@ def main() -> None:
               f"{'IDENTICAL' if len(defaults) == 1 else f'*** {len(defaults)} VARIANTS - asymmetric decoding ***'}")
         hashes = {r["config_hash"] for r in rs}
         print(f"  config_hash: {'single protocol' if len(hashes) == 1 else f'*** {len(hashes)} DIFFERENT PROTOCOLS: {hashes} ***'}")
-        degenerate = [r["ckpt_step"] for r in rs if r["diagnostics"]["n_empty"] or r["diagnostics"]["n_repetitive"]]
-        if degenerate:
-            print(f"  *** degenerate output at steps: {degenerate}")
+        # Rates, not a boolean: "any repetitive prediction" fires on every MT
+        # checkpoint (1012 test sentences) and so carries no information.
+        rates = [(r["ckpt_step"],
+                  100 * (r["diagnostics"]["n_empty"] + r["diagnostics"]["n_repetitive"])
+                  / max(1, r["diagnostics"].get("n_preds", 1))) for r in rs]
+        worst = max(rates, key=lambda x: x[1])
+        mean_rate = sum(v for _, v in rates) / len(rates)
+        print(f"  degenerate output: mean {mean_rate:.2f}% of predictions, "
+              f"worst {worst[1]:.2f}% at step {worst[0]}")
         print()
 
 

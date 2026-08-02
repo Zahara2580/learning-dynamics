@@ -36,8 +36,10 @@ class FinetuneConfig:
         num_epochs: Fixed number of training epochs (locked per task).
         lr_scheduler_type: "constant" for T2X (no warmup, no decay) or
             "linear" for MT (linear decay, no warmup), per the paper.
-        warmup_steps: Always 0 for both tasks - the paper specifies no
-            warmup for downstream finetuning.
+        warmup_steps: Absolute warmup steps. Leave 0 and use
+            warmup_ratio instead, which adapts to each task's step count.
+        warmup_ratio: Fraction of total steps spent warming up to the
+            peak LR. 0.0 reproduces the paper (no warmup).
         eval_batch_size: Batch size for validation loss and generation.
             Affects throughput only, not results.
         max_source_length: Source truncation length. Byte-level models
@@ -71,6 +73,7 @@ class FinetuneConfig:
     num_epochs: int
     lr_scheduler_type: str = "constant"
     warmup_steps: int = 0
+    warmup_ratio: float = 0.0
     gradient_accumulation_steps: int = 1
     eval_batch_size: int = 8
     max_source_length: int = 512
@@ -102,10 +105,12 @@ class FinetuneConfig:
             raise ValueError(
                 f"lr_scheduler_type must be 'constant' or 'linear', got {self.lr_scheduler_type!r}"
             )
-        if self.warmup_steps != 0:
-            raise ValueError(
-                f"the finetuning protocol specifies no warmup, got warmup_steps={self.warmup_steps}"
-            )
+        if self.warmup_steps < 0:
+            raise ValueError(f"warmup_steps must be >= 0, got {self.warmup_steps}")
+        if not 0.0 <= self.warmup_ratio < 1.0:
+            raise ValueError(f"warmup_ratio must be in [0, 1), got {self.warmup_ratio}")
+        if self.warmup_steps and self.warmup_ratio:
+            raise ValueError("set warmup_steps or warmup_ratio, not both")
         if self.num_beams <= 0:
             raise ValueError(f"num_beams must be positive, got {self.num_beams}")
         if self.max_new_tokens <= 0:
