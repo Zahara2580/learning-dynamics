@@ -50,12 +50,15 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    groups = defaultdict(list)
+    # One panel per checkpoint, not per row: best_epoch and last_epoch come
+    # from the same training run and carry identical loss curves, so keying
+    # on ckpt_step collapses the duplicate.
+    groups = defaultdict(dict)
     for row in rows:
-        groups[(row["model"], row["task"])].append(row)
+        groups[(row["model"], row["task"])].setdefault(row["ckpt_step"], row)
 
-    for (model, task), rs in sorted(groups.items()):
-        rs.sort(key=lambda r: r["ckpt_step"])
+    for (model, task), by_step in sorted(groups.items()):
+        rs = [by_step[s] for s in sorted(by_step)]
         ncols = args.ncols
         nrows = math.ceil(len(rs) / ncols)
         figure, axes = plt.subplots(nrows, ncols, figsize=(3.0 * ncols, 2.4 * nrows),

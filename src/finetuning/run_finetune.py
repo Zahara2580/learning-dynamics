@@ -2,17 +2,18 @@
 Finetune CPT checkpoints on a downstream task and score them.
 
 Walks a model's checkpoints in increasing step order; for each,
-finetunes a fresh copy, generates on the test set, appends one metrics
-row, writes the predictions, and deletes the weights (~5GB x ~120 runs
-would exceed the scratch quota; predictions allow any metric to be
-recomputed later).
+finetunes a fresh copy once and evaluates it twice - at the
+best-validation epoch and at the final epoch - writing one row per
+selection, saving the predictions, and deleting the weights (~5GB a run
+would otherwise exceed the scratch quota; predictions allow any metric to
+be recomputed later).
 
-Completed runs are keyed (model, ckpt_step, task, seed) in results.jsonl
-and skipped, so resubmitting after a killed job is safe.
+Completed runs are keyed (model, ckpt_step, task, seed, selection) in
+results.jsonl and skipped, so resubmitting after a killed job is safe.
 
 Usage:
     uv run python3 -m src.finetuning.run_finetune \
-        --config configs/finetune/t2x.yaml --model t5 --pilot
+        --config configs/finetune/d2t.yaml --model t5 --pilot
 """
 
 import argparse
@@ -260,7 +261,7 @@ def load_task_data(cfg: FinetuneConfig) -> dict:
             "test_sources": test_sources, "test_references": test_refs,
         }
 
-    # MT: FLORES dev/devtest for validation/test, training corpus TBD.
+    # MT: WMT22 top-N for training, FLORES dev/devtest for validation/test.
     raw_train_sources, raw_train_targets = load_mt_train(cfg)
     val_raw, val_refs = load_flores_split(cfg.data_dir, FLORES_VALIDATION_SPLIT)
     test_raw, test_refs = load_flores_split(cfg.data_dir, FLORES_TEST_SPLIT)
@@ -371,7 +372,7 @@ def run_one_checkpoint(
     use_wandb: bool = False, wandb_project: str = "", wandb_job_type: str = "sweep",
 ) -> list[dict]:
     """
-    Finetune one checkpoint, score it, and delete its weights.
+    Finetune one checkpoint, score both selections, and delete its weights.
 
     The tokenizer always comes from the base model, never the
     checkpoint: CPT never altered the vocabulary, and the archived
