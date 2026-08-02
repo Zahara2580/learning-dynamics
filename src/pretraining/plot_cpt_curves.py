@@ -90,7 +90,8 @@ def series(points: dict[int, float], max_step: int | None) -> tuple[list[int], l
 
 def draw(curves: dict[str, dict[int, float]], title: str, path: Path,
          smooth: int, max_step: int | None, marker: bool,
-         checkpoint_steps: list[int] | None = None) -> None:
+         checkpoint_steps: list[int] | None = None,
+         x_start: int | None = None) -> None:
     """One figure; one line per model in curves. Titles stay short - the
     filename records whether it is the normalised or raw variant.
 
@@ -125,10 +126,15 @@ def draw(curves: dict[str, dict[int, float]], title: str, path: Path,
             axis.axvline(step, color="grey", alpha=0.25, linewidth=0.8, zorder=0,
                          label="checkpoint" if i == 0 else None)
 
-    # Span exactly the logged range: eval starts at the first eval step (200),
-    # train at the first logging step - no empty margin before the first point.
+    # Span exactly the logged range, and force a tick on the left edge: the
+    # default ticks omit it, which makes eval (which begins at step 200) look
+    # like it begins at 0.
     if first is not None:
-        axis.set_xlim(first, last)
+        left = first if x_start is None else x_start
+        axis.set_xlim(left, last)
+        ticks = [t for t in axis.get_xticks() if left < t <= last]
+        axis.set_xticks([left] + ticks)
+        axis.set_xlim(left, last)
     axis.set_xlabel("CPT step")
     axis.set_ylabel("Loss")
     axis.set_title(title)
@@ -175,18 +181,20 @@ def main() -> None:
         10_000, CheckpointScheduleConfig())
 
     panels = [
-        ("train_loss_normalised", norm_train, "Training loss", args.smooth, False),
-        ("train_loss_raw", raw_train, "Training loss", args.smooth, False),
-        ("eval_loss", evals, "Validation loss", 1, True),
+        ("train_loss_normalised", norm_train, "Training loss", args.smooth, False, 0),
+        ("train_loss_raw", raw_train, "Training loss", args.smooth, False, 0),
+        ("eval_loss", evals, "Validation loss", 1, True, None),
     ]
 
-    for prefix, data, title, smooth, marker in panels:
+    for prefix, data, title, smooth, marker, x_start in panels:
         # one figure per model
         for model, points in data.items():
             draw({model: points}, f"{title} for {model}",
-                 output_dir / f"{prefix}_{model}.png", smooth, args.max_step, marker, ckpts)
+                 output_dir / f"{prefix}_{model}.png", smooth, args.max_step, marker,
+                 ckpts, x_start)
         # all models together
-        draw(data, title, output_dir / f"{prefix}_all.png", smooth, args.max_step, marker, ckpts)
+        draw(data, title, output_dir / f"{prefix}_all.png", smooth, args.max_step, marker,
+             ckpts, x_start)
 
 
 if __name__ == "__main__":
