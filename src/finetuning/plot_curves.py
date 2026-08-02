@@ -28,7 +28,6 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 METRICS = ["bleu", "chrf", "chrf_pp", "ter"]
 LABELS = {"bleu": "BLEU", "chrf": "chrF", "chrf_pp": "chrF++", "ter": "TER"}
-HEADLINE = {"d2t": "chrf", "mt": "bleu"}
 MODEL_ORDER = ["t5", "byt5", "nguni-byt5"]
 
 
@@ -63,7 +62,7 @@ def draw(curves: dict[str, list[tuple[int, float]]], title: str, ylabel: str, pa
                       marker="o", markersize=4, color=c, label=model)
 
     axis.set_xscale("log")
-    axis.set_xlabel("CPT step (log scale); dashed = un-adapted base")
+    axis.set_xlabel("CPT step")
     axis.set_ylabel(ylabel)
     axis.set_title(title)
     axis.grid(alpha=0.3, which="both")
@@ -94,14 +93,13 @@ def main() -> None:
 
     for (task, metric), by_model in sorted(series.items()):
         label = LABELS[metric]
-        star = "  [headline]" if HEADLINE.get(task) == metric else ""
         # per model, own y-scale - read these for trends
         for model, points in by_model.items():
-            draw({model: points}, f"{task.upper()} {label} - {model}{star}", label,
+            draw({model: points}, f"{task.upper()} {label} for {model}", label,
                  output_dir / f"{task}_{metric}_{model}.png")
         # all models together - for cross-model comparison only
         if len(by_model) > 1:
-            draw(dict(by_model), f"{task.upper()} {label} - all models{star}", label,
+            draw(dict(by_model), f"{task.upper()} {label}", label,
                  output_dir / f"{task}_{metric}_all.png")
 
 
