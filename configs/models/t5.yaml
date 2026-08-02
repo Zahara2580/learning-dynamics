@@ -16,4 +16,3 @@ output_dir: "/scratch/rmdrak003/results/t5"
 # Experiment Tracking
 wandb_project: "cpt-learning-dynamics"
 wandb_run_name: "t5-xho"
-logging_steps: 10

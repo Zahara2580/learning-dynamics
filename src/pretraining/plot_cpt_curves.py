@@ -21,6 +21,8 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+from src.pretraining.schedule import CheckpointScheduleConfig, compute_checkpoint_steps
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -42,6 +44,8 @@ def parse_args() -> Namespace:
     parser.add_argument("--smooth", type=int, default=20,
                         help="Rolling-mean window for train loss (1 = raw).")
     parser.add_argument("--max-step", type=int, default=None, help="Truncate the x-axis.")
+    parser.add_argument("--no-checkpoints", action="store_true",
+                        help="Do not mark the saved checkpoint steps.")
     return parser.parse_args()
 
 
@@ -84,23 +88,59 @@ def series(points: dict[int, float], max_step: int | None) -> tuple[list[int], l
     return steps, [points[s] for s in steps]
 
 
-def draw(curves: dict[str, dict[int, float]], title: str,
-         path: Path, smooth: int, max_step: int | None, marker: bool) -> None:
+def draw(curves: dict[str, dict[int, float]], title: str, path: Path,
+         smooth: int, max_step: int | None, marker: bool,
+         checkpoint_steps: list[int] | None = None) -> None:
     """One figure; one line per model in curves. Titles stay short - the
-    filename records whether it is the normalised or raw variant."""
+    filename records whether it is the normalised or raw variant.
+
+    Checkpoints are shown in two layers so nothing is invented: a grey
+    vertical line marks every saved checkpoint (position only), and a
+    diamond sits on the curve wherever a value was actually logged at that
+    step. Train logs every step so all 19 get diamonds; eval logs every 200
+    so five (100/300/500/700/900) have a line but no diamond.
+    """
     figure, axis = plt.subplots(figsize=(9, 5))
+    first, last = None, None
     for model, points in curves.items():
         steps, values = series(points, max_step)
         if not steps:
             continue
-        axis.plot(steps, rolling_mean(values, smooth), color=COLOURS[model],
-                  marker="o" if marker else None, markersize=3, linewidth=1.4, label=model)
+        smoothed = rolling_mean(values, smooth)
+        axis.plot(steps, smoothed, color=COLOURS[model], marker="o" if marker else None,
+                  markersize=3, linewidth=1.4, label=model, zorder=3)
+        if checkpoint_steps:
+            at = dict(zip(steps, smoothed))
+            hits = [s for s in checkpoint_steps if s in at]
+            axis.plot(hits, [at[s] for s in hits], linestyle="none", marker="D",
+                      markersize=5, color=COLOURS[model], markeredgecolor="black",
+                      markeredgewidth=0.6, zorder=4)
+        first = steps[0] if first is None else min(first, steps[0])
+        last = steps[-1] if last is None else max(last, steps[-1])
+
+    # Position-only markers: no y-value is claimed, so the five checkpoints
+    # without an eval measurement are still visible.
+    if checkpoint_steps and first is not None:
+        for i, step in enumerate([s for s in checkpoint_steps if first <= s <= last]):
+            axis.axvline(step, color="grey", alpha=0.25, linewidth=0.8, zorder=0,
+                         label="checkpoint" if i == 0 else None)
+
+    # Span exactly the logged range: eval starts at the first eval step (200),
+    # train at the first logging step - no empty margin before the first point.
+    if first is not None:
+        axis.set_xlim(first, last)
     axis.set_xlabel("CPT step")
     axis.set_ylabel("Loss")
     axis.set_title(title)
     axis.grid(alpha=0.3)
-    if len(curves) > 1:  # on a single-model plot the title already names it
-        axis.legend()
+    handles, labels = axis.get_legend_handles_labels()
+    # keep the checkpoint key even on single-model plots, where the title
+    # already names the model
+    if len(curves) == 1:
+        keep = [(h, l) for h, l in zip(handles, labels) if l == "checkpoint"]
+        handles, labels = ([h for h, _ in keep], [l for _, l in keep])
+    if handles:
+        axis.legend(handles, labels, fontsize=9)
     figure.tight_layout()
     figure.savefig(path, dpi=150)
     plt.close(figure)
@@ -131,6 +171,9 @@ def main() -> None:
     if not raw_train:
         raise SystemExit(f"no metrics files found under {root}")
 
+    ckpts = None if args.no_checkpoints else compute_checkpoint_steps(
+        10_000, CheckpointScheduleConfig())
+
     panels = [
         ("train_loss_normalised", norm_train, "Training loss", args.smooth, False),
         ("train_loss_raw", raw_train, "Training loss", args.smooth, False),
@@ -141,9 +184,9 @@ def main() -> None:
         # one figure per model
         for model, points in data.items():
             draw({model: points}, f"{title} for {model}",
-                 output_dir / f"{prefix}_{model}.png", smooth, args.max_step, marker)
+                 output_dir / f"{prefix}_{model}.png", smooth, args.max_step, marker, ckpts)
         # all models together
-        draw(data, title, output_dir / f"{prefix}_all.png", smooth, args.max_step, marker)
+        draw(data, title, output_dir / f"{prefix}_all.png", smooth, args.max_step, marker, ckpts)
 
 
 if __name__ == "__main__":

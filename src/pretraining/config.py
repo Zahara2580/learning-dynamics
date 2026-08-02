@@ -1,10 +1,13 @@
 """Configuration for pretraining a single model."""
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Union
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -65,9 +68,8 @@ class ModelConfig:
         """
         Load a ModelConfig from a YAML file.
 
-        Only recognised fields are read from the file - extra keys
-        (e.g. checkpoint_schedule) are ignored here, since this class
-        only covers what preprocessing/training need.
+        Unknown keys are ignored but warned about: a silently dropped key
+        looks like a setting that is in force when it is not.
 
         :param path: Path to the YAML config file.
         :return: Populated ModelConfig instance.
@@ -76,5 +78,8 @@ class ModelConfig:
             data = yaml.safe_load(f)
 
         known_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        dropped = set(data) - known_fields
+        if dropped:
+            logger.warning(f"ignoring unknown config keys in {path}: {sorted(dropped)}")
         filtered = {k: v for k, v in data.items() if k in known_fields}
         return cls(**filtered)
