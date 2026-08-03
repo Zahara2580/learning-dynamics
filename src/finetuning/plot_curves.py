@@ -50,7 +50,6 @@ STYLES = {"best_epoch": "-", "last_epoch": ":"}
 def draw(curves: dict[str, list[tuple[int, float]]], title: str, ylabel: str, path: Path) -> None:
     """One figure; one line per model, each with its own base reference."""
     figure, axis = plt.subplots(figsize=(8, 5))
-    drawn_base = set()
     for key, points in sorted(curves.items(), key=lambda kv: (
             MODEL_ORDER.index(kv[0][0]) if kv[0][0] in MODEL_ORDER else 99, kv[0][1])):
         model, selection = key
@@ -58,12 +57,16 @@ def draw(curves: dict[str, list[tuple[int, float]]], title: str, ylabel: str, pa
         base = [v for s, v in points if s == 0]
         cpt = [(s, v) for s, v in points if s > 0]
         c = colour(model)
-        if base and model not in drawn_base:
-            drawn_base.add(model)
-            axis.axhline(base[0], color=c, linestyle="--", linewidth=1.2, alpha=0.8)
+        # One base line PER SELECTION: base itself is finetuned under the
+        # same protocol, so its best-epoch and last-epoch scores differ
+        # (1.6 chrF apart for t5). Sharing one line would compare a curve
+        # against the wrong baseline.
+        if base:
+            axis.axhline(base[0], color=c, linestyle="--", linewidth=1.0, alpha=0.55)
+            tag = f" {model} base" if selection is None else f" base ({selection})"
             if cpt:
-                axis.text(cpt[-1][0], base[0], f" {model} base", color=c,
-                          va="bottom", ha="right", fontsize=8)
+                axis.text(cpt[-1][0], base[0], tag, color=c,
+                          va="bottom", ha="right", fontsize=7, alpha=0.9)
         if cpt:
             label = model if selection is None else f"{model} ({selection})"
             axis.plot([s for s, _ in cpt], [v for _, v in cpt], marker="o", markersize=4,
