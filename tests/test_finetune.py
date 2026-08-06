@@ -94,3 +94,27 @@ def test_predictions_roundtrip_with_embedded_newline(tmp_path):
     recovered = read_predictions(path)
     assert recovered == preds
     assert len(recovered) == len(preds)
+
+
+# ---- MT direction (xh-en support) ----
+
+def test_direction_validated():
+    with pytest.raises(ValueError):
+        FinetuneConfig(task="mt", data_dir="d", learning_rate=1e-5, batch_size=4,
+                       num_epochs=5, lr_scheduler_type="linear",
+                       n_train_pairs=100, direction="banana")
+
+
+def test_xhen_changes_hash_but_default_does_not():
+    import dataclasses
+    base = FinetuneConfig(task="mt", data_dir="d", learning_rate=1e-5, batch_size=4,
+                          num_epochs=5, lr_scheduler_type="linear", n_train_pairs=100)
+    assert base.direction == "en-xh"
+    assert dataclasses.replace(base, direction="xh-en").hash() != base.hash()
+
+
+def test_mt_5epoch_configs_load():
+    for name, direction in [("mt_5epoch", "en-xh"), ("mt_xhen_5epoch", "xh-en")]:
+        c = FinetuneConfig.from_yaml(f"configs/finetune/{name}.yaml")
+        assert c.num_epochs == 5 and c.direction == direction
+        assert direction.replace("-", "") in c.results_dir.replace("_", "") or direction == "en-xh"

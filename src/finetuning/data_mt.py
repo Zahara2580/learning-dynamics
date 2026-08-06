@@ -27,7 +27,7 @@ WMT22_CONFIG = "eng-xho"
 
 
 def load_flores_split(
-    data_dir: Union[str, Path], split: str
+    data_dir: Union[str, Path], split: str, direction: str = "en-xh"
 ) -> tuple[list[str], list[list[str]]]:
     """
     Load one FLORES-200 split as parallel English/isiXhosa sentences.
@@ -53,8 +53,14 @@ def load_flores_split(
         )
 
     rows = dataset[split]
-    sources = [s.strip() for s in rows["source"]]
-    references = [[t.strip()] for t in rows["target"]]
+    # The saved DatasetDict has source=eng_Latn, target=xho_Latn; xh-en
+    # simply swaps which side is input and which is reference.
+    if direction == "en-xh":
+        sources = [s.strip() for s in rows["source"]]
+        references = [[t.strip()] for t in rows["target"]]
+    else:
+        sources = [t.strip() for t in rows["target"]]
+        references = [[s.strip()] for s in rows["source"]]
 
     assert len(sources) == len(references), "FLORES source/target misalignment"
     return sources, references
@@ -134,8 +140,11 @@ def load_mt_train(cfg) -> tuple[list[str], list[str]]:
     """
     raw = load_dataset(WMT22_DATASET, WMT22_CONFIG, split="train")
     kept, n_dup = select_top_n_unique(rank_by_laser(raw), cfg.n_train_pairs)
-    sources = [row["translation"]["eng"].strip() for row in kept]
-    targets = [row["translation"]["xho"].strip() for row in kept]
+    # Same top-N pairs whichever way round: dedup + ranking ignore
+    # direction, so en-xh and xh-en train on identical sentence pairs.
+    src_key, tgt_key = ("eng", "xho") if cfg.direction == "en-xh" else ("xho", "eng")
+    sources = [row["translation"][src_key].strip() for row in kept]
+    targets = [row["translation"][tgt_key].strip() for row in kept]
 
     logger.info(
         f"MT train: kept {len(sources)} pairs "

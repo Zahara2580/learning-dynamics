@@ -60,6 +60,8 @@ class FinetuneConfig:
         n_train_pairs: MT only: number of WMT22 pairs used for training,
             selected by the dedupe-then-top-N-by-laser_score rule in
             load_mt_train. 0 = unused (t2x).
+        direction: MT only: "en-xh" (default) or "xh-en". Orients both
+            the training pairs and the FLORES evaluation pairs.
         wandb_project: W&B project for the --wandb curves. Infra, not
             protocol (excluded from the hash).
         work_dir: Scratch directory for transient finetuned weights.
@@ -83,6 +85,7 @@ class FinetuneConfig:
     source_prefix: str = ""
     direction_prefix: str = ""
     n_train_pairs: int = 0
+    direction: str = "en-xh"
     wandb_project: str = "cpt-finetune-dynamics"
     work_dir: str = "/scratch/rmdrak003/finetune_work"
     results_dir: str = "results/finetune"
@@ -115,6 +118,8 @@ class FinetuneConfig:
             raise ValueError(f"num_beams must be positive, got {self.num_beams}")
         if self.max_new_tokens <= 0:
             raise ValueError(f"max_new_tokens must be positive, got {self.max_new_tokens}")
+        if self.direction not in {"en-xh", "xh-en"}:
+            raise ValueError(f"direction must be 'en-xh' or 'xh-en', got {self.direction!r}")
         if self.task == "mt" and self.n_train_pairs <= 0:
             raise ValueError(
                 f"mt task requires n_train_pairs > 0, got {self.n_train_pairs}"
@@ -165,6 +170,10 @@ class FinetuneConfig:
                          # product is hashed instead (below).
                          "batch_size", "gradient_accumulation_steps"}
         }
+        if payload.get("direction") == "en-xh":
+            # historical default: omitted so rows written before the field
+            # existed keep their hash; xh-en stays in and changes it.
+            payload.pop("direction")
         payload["effective_batch_size"] = self.effective_batch_size
         blob = json.dumps(payload, sort_keys=True)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]

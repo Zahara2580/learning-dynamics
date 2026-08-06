@@ -263,8 +263,8 @@ def load_task_data(cfg: FinetuneConfig) -> dict:
 
     # MT: WMT22 top-N for training, FLORES dev/devtest for validation/test.
     raw_train_sources, raw_train_targets = load_mt_train(cfg)
-    val_raw, val_refs = load_flores_split(cfg.data_dir, FLORES_VALIDATION_SPLIT)
-    test_raw, test_refs = load_flores_split(cfg.data_dir, FLORES_TEST_SPLIT)
+    val_raw, val_refs = load_flores_split(cfg.data_dir, FLORES_VALIDATION_SPLIT, cfg.direction)
+    test_raw, test_refs = load_flores_split(cfg.data_dir, FLORES_TEST_SPLIT, cfg.direction)
 
     return {
         "train_sources": build_mt_sources(raw_train_sources, cfg.source_prefix, cfg.direction_prefix),
@@ -513,6 +513,7 @@ def run_one_checkpoint(
 
     common = {
         "model": model_name, "ckpt_step": step, "task": cfg.task, "seed": seed,
+        "direction": cfg.direction if cfg.task == "mt" else None,
         "val_loss_per_epoch": val_losses, "train_loss_per_epoch": train_losses,
         "best_epoch": best_epoch, "n_epochs": cfg.num_epochs,
         "best_is_last": best_is_last,
