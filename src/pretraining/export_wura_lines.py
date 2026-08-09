@@ -27,6 +27,10 @@ def parse_args() -> Namespace:
                         help="Passage-level corpus dir (download_corpus.py --level passage).")
     parser.add_argument("--split", type=str, default="train", help="Which split of the DatasetDict to export.")
     parser.add_argument("--output", type=str, required=True, help="Output text file path.")
+    parser.add_argument("--sample-n", type=int, default=None,
+                        help="Randomly sample this many passages instead of exporting all "
+                             "(bilingual corpus construction: match the xho passage count).")
+    parser.add_argument("--sample-seed", type=int, default=42)
     parser.add_argument(
         "--min-chars",
         type=int,
@@ -45,6 +49,14 @@ def main() -> None:
     logger.info(f"Loading passage-level corpus from {args.input} (split={args.split})...")
     corpus = load_from_disk(args.input)[args.split]
     logger.info(f"{len(corpus):,} passages.")
+
+    if args.sample_n is not None:
+        if args.sample_n > len(corpus):
+            raise ValueError(f"--sample-n {args.sample_n} > corpus size {len(corpus)}")
+        import random as _random
+        idx = sorted(_random.Random(args.sample_seed).sample(range(len(corpus)), args.sample_n))
+        corpus = corpus.select(idx)
+        logger.info(f"Sampled {len(corpus):,} passages (seed {args.sample_seed}).")
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

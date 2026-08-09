@@ -25,9 +25,8 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # WURA dataset constants.
-# SUPPORTED_LANGUAGES only lists xho for now
 DATASET_NAME = "castorini/wura"
-SUPPORTED_LANGUAGES = ["xho"]
+SUPPORTED_LANGUAGES = ["xho", "eng"]
 
 
 def parse_args() -> Namespace:

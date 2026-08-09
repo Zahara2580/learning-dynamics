@@ -1,0 +1,25 @@
+# PILOT: does a task prefix change D2T at all? Identical to
+# d2t_warmup20.yaml except source_prefix - one variable, so any
+# difference is attributable. Judge against seed noise (sd ~0.67 chrF).
+# NGLUEni names a prefix for MT and none for T2X, so "" is the faithful
+# default; this arm exists only to bound the effect size.
+task: "d2t"
+data_dir: "data/finetune/d2t"
+
+learning_rate: 1.0e-4
+batch_size: 4
+num_epochs: 5
+lr_scheduler_type: "linear"
+warmup_ratio: 0.20
+
+eval_batch_size: 8
+max_source_length: 512
+max_target_length: 512
+num_beams: 5
+max_new_tokens: 512
+
+source_prefix: "describe: "
+
+wandb_project: "cpt-d2t-prefix-pilot"
+work_dir: "/scratch/rmdrak003/finetune_work"
+results_dir: "results_d2t_prefix_pilot"
