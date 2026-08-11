@@ -37,5 +37,5 @@ uv sync --frozen
 set -e
 
 echo "=== zero-shot ${MODEL} / ${TASK}  $(date -Is) ==="
-uv run python3 -m scripts.diagnostics.zero_shot_eval --model "${MODEL}" --task "${TASK}"
+uv run python3 -m scripts.diagnostics.zero_shot_eval --model "${MODEL}" --task "${TASK}" "${@:3}"
 echo "=== done $(date -Is) ==="
