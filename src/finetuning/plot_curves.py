@@ -9,6 +9,9 @@ looks flat.
 Base (step 0) is a dashed horizontal reference, not a point on the curve:
 it is the un-adapted starting model, not a CPT checkpoint.
 
+Plots last_epoch rows only by default (--selection best_epoch/all for the
+others). Linear CPT-step axis.
+
 Usage:
     uv run python3 -m src.finetuning.plot_curves
     uv run python3 -m src.finetuning.plot_curves --results results/variance/results.jsonl \
@@ -36,6 +39,8 @@ def parse_args() -> Namespace:
     parser.add_argument("--results", type=str, default="results/finetune/results.jsonl")
     parser.add_argument("--output-dir", type=str, default="results/finetune/plots")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--selection", type=str, default="last_epoch",
+                        choices=["best_epoch", "last_epoch", "all"])
     return parser.parse_args()
 
 
@@ -72,11 +77,10 @@ def draw(curves: dict[str, list[tuple[int, float]]], title: str, ylabel: str, pa
             axis.plot([s for s, _ in cpt], [v for _, v in cpt], marker="o", markersize=4,
                       color=c, linestyle=STYLES.get(selection, "-"), label=label)
 
-    axis.set_xscale("log")
     axis.set_xlabel("CPT step")
     axis.set_ylabel(ylabel)
     axis.set_title(title)
-    axis.grid(alpha=0.3, which="both")
+    axis.grid(alpha=0.3)
     if len(curves) > 1:
         axis.legend(fontsize=9)
     figure.tight_layout()
@@ -91,6 +95,11 @@ def main() -> None:
     rows = [r for r in rows if r["seed"] == args.seed]
     if not rows:
         raise SystemExit(f"no rows with seed {args.seed} in {args.results}")
+
+    if args.selection != "all":
+        # rows predating the selection field pass through unchanged
+        picked = [r for r in rows if r.get("selection", args.selection) == args.selection]
+        rows = picked or rows
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

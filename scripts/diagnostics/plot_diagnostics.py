@@ -4,7 +4,7 @@ per CPT checkpoint.
 
 Auto-detects whatever exists: results/alignment/*.jsonl and
 results/zero_shot/*_*.jsonl. Step 0 (un-adapted model) is drawn as a
-dashed reference line, CPT steps on a log axis - same conventions as the
+dashed reference line, linear CPT-step axis - same conventions as the
 finetuning plots.
 
 Usage:
@@ -50,11 +50,10 @@ def draw(series: dict[str, list[tuple[int, float]]], title: str, ylabel: str, pa
         if cpt:
             axis.plot([s for s, _ in cpt], [v for _, v in cpt],
                       marker="o", markersize=4, color=c, label=model)
-    axis.set_xscale("log")
     axis.set_xlabel("CPT step")
     axis.set_ylabel(ylabel)
     axis.set_title(title)
-    axis.grid(alpha=0.3, which="both")
+    axis.grid(alpha=0.3)
     if len(series) > 1:
         axis.legend(fontsize=9)
     figure.tight_layout()
