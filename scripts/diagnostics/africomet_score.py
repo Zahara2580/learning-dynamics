@@ -47,11 +47,15 @@ def parse_args() -> Namespace:
 
 def parse_name(stem: str) -> dict | None:
     """Finetuned: model_step_task_seed_selection (selection itself has one
-    underscore). Zero-shot: model_step_task. Returns None for non-MT files."""
+    underscore); files predating the two-selection change have no selection
+    suffix. Zero-shot: model_step_task. Returns None for non-MT files."""
     p = stem.split("_")
     if len(p) == 6:
         model, step, task, seed = p[0], p[1], p[2], p[3]
         selection = f"{p[4]}_{p[5]}"
+    elif len(p) == 4:
+        model, step, task, seed = p
+        selection = None
     elif len(p) == 3:
         model, step, task = p
         seed, selection = None, None
