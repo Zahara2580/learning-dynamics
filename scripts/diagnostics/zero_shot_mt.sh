@@ -10,15 +10,16 @@
 #SBATCH --output=logs/zeroshot_mt_%j.log
 #SBATCH --error=logs/zeroshot_mt_%j.log
 #
-# Zero-shot MT (FLORES devtest, en->xh, frozen generation settings) for
-# base + all 19 checkpoints of ONE model. 1,012 sources is ~2.7x the D2T
-# test set, so one model per job to stay inside 6h.
+# Zero-shot MT (FLORES devtest, frozen generation settings) for base +
+# all 19 checkpoints of ONE model. 1,012 sources is ~2.7x the D2T test
+# set, so one model per job to stay inside 6h. Second arg picks the
+# direction task: mt (en->xh, default) or mt-xhen (xh->en).
 #
 #   sbatch scripts/diagnostics/zero_shot_mt.sh t5
-#   sbatch scripts/diagnostics/zero_shot_mt.sh byt5
-#   sbatch scripts/diagnostics/zero_shot_mt.sh nguni-byt5
+#   sbatch scripts/diagnostics/zero_shot_mt.sh byt5 mt-xhen
 
-MODEL="${1:?usage: sbatch zero_shot_mt.sh <t5|byt5|nguni-byt5>}"
+MODEL="${1:?usage: sbatch zero_shot_mt.sh <t5|byt5|nguni-byt5> [mt|mt-xhen]}"
+TASK="${2:-mt}"
 
 git pull
 git log -1
@@ -35,6 +36,6 @@ uv sync --frozen
 
 set -e
 
-echo "=== zero-shot ${MODEL} / mt  $(date -Is) ==="
-uv run python3 -m scripts.diagnostics.zero_shot_eval --model "${MODEL}" --task mt
+echo "=== zero-shot ${MODEL} / ${TASK}  $(date -Is) ==="
+uv run python3 -m scripts.diagnostics.zero_shot_eval --model "${MODEL}" --task "${TASK}"
 echo "=== done $(date -Is) ==="

@@ -21,3 +21,10 @@ wandb/
 
 # Working notes: progress tracking, drafts, reference papers. Never committed.
 /notes/
+
+# Results and figures (live on the HPC / laptop, not in git)
+/results/
+/results_*/
+/logs/
+*.png
+*.jsonl

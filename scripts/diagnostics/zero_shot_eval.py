@@ -46,13 +46,17 @@ MODELS = {
     "nguni-byt5": ("francois-meyer/nguni-byt5-large",
                    "/scratch/rmdrak003/results/nguni-byt5/lafand-bs4/checkpoints"),
 }
-CONFIGS = {"d2t": "configs/finetune/d2t.yaml", "mt": "configs/finetune/mt.yaml"}
+CONFIGS = {
+    "d2t": "configs/finetune/d2t.yaml",
+    "mt": "configs/finetune/mt.yaml",
+    "mt-xhen": "configs/finetune/mt_xhen_5epoch.yaml",
+}
 
 
 def parse_args() -> Namespace:
     parser = argparse.ArgumentParser(description="Zero-shot metrics across CPT checkpoints.")
     parser.add_argument("--model", type=str, required=True, choices=list(MODELS))
-    parser.add_argument("--task", type=str, default="d2t", choices=["d2t", "mt"])
+    parser.add_argument("--task", type=str, default="d2t", choices=list(CONFIGS))
     parser.add_argument("--steps", type=int, nargs="+", default=None,
                         help="Subset of checkpoint steps (0 = base). Default: base + all.")
     parser.add_argument("--limit", type=int, default=None, help="Cap test examples (spot checks).")
@@ -71,7 +75,7 @@ def load_eval_data(task: str, data_dir: str, cfg: FinetuneConfig, limit: int | N
         inputs, refs = load_t2x_split(Path(data_dir), "test")
         sources, loss_targets = build_training_pairs(inputs, refs, cfg.source_prefix)
     else:
-        raw, refs = load_flores_split(data_dir, FLORES_TEST_SPLIT)
+        raw, refs = load_flores_split(data_dir, FLORES_TEST_SPLIT, cfg.direction)
         sources = build_mt_sources(raw, cfg.source_prefix, cfg.direction_prefix)
         loss_targets = [r[0] for r in refs]
     if limit:
