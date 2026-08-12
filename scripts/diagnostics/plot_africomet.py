@@ -75,7 +75,15 @@ def main() -> None:
 
     for key, series in sorted(groups.items()):
         title = ARM_TITLES.get(key, f"AfriCOMET {key[0]} {key[1]}")
-        draw(dict(series), title, out / f"{key[0]}_{key[1]}.png")
+        # per model, own y-scale - the absolute levels differ so much
+        # (t5 far below the byte models) that a shared axis flattens
+        # every trend; read these for patterns
+        for model, points in sorted(series.items()):
+            draw({model: points}, f"{title} - {model}",
+                 out / f"{key[0]}_{key[1]}_{model}.png")
+        # all models together - cross-model comparison only
+        if len(series) > 1:
+            draw(dict(series), title, out / f"{key[0]}_{key[1]}.png")
 
 
 if __name__ == "__main__":
