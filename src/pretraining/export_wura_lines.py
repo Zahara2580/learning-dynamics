@@ -34,11 +34,12 @@ def parse_args() -> Namespace:
     parser.add_argument(
         "--min-chars",
         type=int,
-        default=10,
-        help="Drop passages shorter than this many characters. Empty lines "
-             "crash the lafand data loader (util.py asserts min line length "
-             "> 0), and <10-char lines tokenize so short that int(len*0.15) "
-             "rounds to zero masked positions (degenerate examples).",
+        default=1,
+        help="Drop passages shorter than this many characters. Default 1 = "
+             "drop only empty lines, which crash the lafand data loader "
+             "(util.py asserts min line length > 0). Content filtering is "
+             "deliberately OFF (measured: a 10-char threshold dropped zero "
+             "passages on both WURA splits anyway).",
     )
     return parser.parse_args()
 
