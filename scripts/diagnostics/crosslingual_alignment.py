@@ -7,13 +7,15 @@ isiXhosa translations with the model's ENCODER, mean-pool the final
 hidden states over non-padding positions, and measure how aligned the two
 languages' representation spaces are:
 
-  paired cosine   mean cos(eng_i, xho_i) over translation pairs
-  random cosine   mean cos over mismatched pairs - the anisotropy floor
-                  (encoder spaces have high cosine between ANY two texts,
-                  so the paired number alone is inflated)
-  margin          paired - random: the actual cross-lingual signal
-  retrieval@1     % of English sentences whose nearest isiXhosa neighbour
-                  is their true translation (and the reverse)
+Metrics follow Idris et al. ("Can Embedding Similarity Predict
+Cross-Lingual Transfer?") verbatim:
+  cosine_mean   (aka paired) mean cos(eng_i, xho_i) over translation pairs
+  baseline      (aka random) mean over ALL N^2 pairs incl. the diagonal -
+                the anisotropy floor (Eq. 1's second term)
+  cosine_gap    (aka margin) cosine_mean - baseline: the cross-lingual
+                signal, corrected for "everything is close to everything"
+  P@1           (aka retrieval@1) % of sentences whose nearest neighbour
+                in the other language is the true translation, both ways
 
 Plotted against CPT step this shows whether isiXhosa-only CPT pulls the
 two languages together (byt5 learning isiXhosa) or apart (nguni drifting
@@ -44,7 +46,8 @@ MODELS = {
                    "/scratch/rmdrak003/results/nguni-byt5/lafand-bs4/checkpoints"),
 }
 FLORES_DIR = "data/finetune/mt"
-SPLIT = "dev"   # validation split: analysis data, keeps devtest untouched
+SPLIT = "devtest"   # matches Idris et al. exactly (1,012 sentences); the
+                    # probe is a frozen forward pass - nothing trains on it
 
 
 def parse_args() -> Namespace:
@@ -76,14 +79,19 @@ def encode(encoder, tokenizer, texts: list[str], batch_size: int, device) -> tor
 
 
 def alignment_stats(eng: torch.Tensor, xho: torch.Tensor) -> dict:
-    sims = eng @ xho.T                      # (n, n) cosine matrix
+    """Verbatim Idris et al.: cosine_mean = mean of the diagonal of M;
+    cosine_gap (Eq. 1) = cosine_mean - mean over ALL N^2 entries of M
+    (baseline includes the diagonal); P@1 = fraction whose nearest
+    neighbour is the true translation, both directions."""
+    sims = eng @ xho.T                      # M: (n, n) cosine matrix
     n = sims.shape[0]
-    paired = sims.diagonal().mean().item()
-    off = (sims.sum() - sims.diagonal().sum()) / (n * n - n)
+    cosine_mean = sims.diagonal().mean().item()
+    baseline = sims.mean().item()           # (1/N^2) * sum_ij M_ij
+    gap = cosine_mean - baseline
     r_e2x = (sims.argmax(dim=1) == torch.arange(n)).float().mean().item()
     r_x2e = (sims.argmax(dim=0) == torch.arange(n)).float().mean().item()
-    return {"paired_cos": paired, "random_cos": off.item(),
-            "margin": paired - off.item(),
+    return {"paired_cos": cosine_mean, "random_cos": baseline,
+            "margin": gap, "cosine_mean": cosine_mean, "cosine_gap": gap,
             "retrieval_e2x": r_e2x, "retrieval_x2e": r_x2e}
 
 
