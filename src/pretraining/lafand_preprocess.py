@@ -101,7 +101,8 @@ def parse_args() -> Namespace:
     parser.add_argument("--input-text", type=str, required=True, help="One-example-per-line text file (from export_wura_lines.py).")
     parser.add_argument("--model-config", type=str, required=True, help="Model YAML (provides the tokenizer).")
     parser.add_argument("--output-dir", type=str, required=True, help="Directory for {type_path}.source/.target files.")
-    parser.add_argument("--type-path", type=str, default="train", choices=["train", "dev"], help="Output file prefix.")
+    parser.add_argument("--type-path", type=str, default="train",
+                        help="Output file prefix (train, dev, dev_xho, dev_eng, ...).")
     parser.add_argument("--max-line-tokens", type=int, default=512,
                         help="Window size (tokens). Each passage is tokenized then split into "
                              "consecutive windows of this length; each window is masked as its "

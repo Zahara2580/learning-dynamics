@@ -173,6 +173,10 @@ def parse_args() -> Namespace:
     parser.add_argument("--n-eval-obs", type=int, default=None,
                         help="Subsample the dev set to this many examples (the full paragraph-level "
                              "dev set is large; evaluating all of it every eval-steps is slow).")
+    parser.add_argument("--eval-sets", type=str, nargs="+", default=None,
+                        help="Evaluate named dev sets separately: 'xho eng' reads "
+                             "dev_xho.* and dev_eng.* and logs eval_xho_loss / "
+                             "eval_eng_loss. Default: the single combined dev.*.")
     parser.add_argument("--warmup-steps", type=int, default=None,
                         help="Override the warmup_steps from the config, for short test runs.")
     parser.add_argument("--metrics-filename", type=str, default="metrics.jsonl",
@@ -238,8 +242,16 @@ def main() -> None:
 
     logger.info(f"Loading lafand-preprocessed data from {args.data_dir}...")
     dataset = LafandSeq2SeqDataset(args.data_dir, type_path="train")
-    eval_dataset = LafandSeq2SeqDataset(args.data_dir, type_path="dev", n_obs=args.n_eval_obs)
-    logger.info(f"Loaded {len(dataset):,} train / {len(eval_dataset):,} dev examples.")
+    if args.eval_sets:
+        # dict eval: Trainer evaluates each set and logs eval_{name}_loss
+        eval_dataset = {name: LafandSeq2SeqDataset(args.data_dir, type_path=f"dev_{name}",
+                                                   n_obs=args.n_eval_obs)
+                        for name in args.eval_sets}
+        sizes = ", ".join(f"{k}={len(v):,}" for k, v in eval_dataset.items())
+        logger.info(f"Loaded {len(dataset):,} train / dev sets: {sizes}")
+    else:
+        eval_dataset = LafandSeq2SeqDataset(args.data_dir, type_path="dev", n_obs=args.n_eval_obs)
+        logger.info(f"Loaded {len(dataset):,} train / {len(eval_dataset):,} dev examples.")
 
     collator = LafandSeq2SeqCollator(
         pad_token_id=tokenizer.pad_token_id,
@@ -269,6 +281,9 @@ def main() -> None:
         resume_from = find_latest_checkpoint(str(resume_checkpoint_dir))
 
     early_stopping_enabled = args.early_stopping_patience is not None
+    if early_stopping_enabled and args.eval_sets:
+        raise ValueError("--early-stopping-patience selects on eval_loss, which does not "
+                         "exist with --eval-sets (keys are eval_<name>_loss). Use one or the other.")
     if args.no_save and early_stopping_enabled:
         raise ValueError("--no-save and --early-stopping-patience are incompatible: "
                          "early stopping needs load_best_model_at_end, which requires saved checkpoints.")
