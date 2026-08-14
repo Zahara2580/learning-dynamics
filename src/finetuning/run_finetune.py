@@ -23,6 +23,7 @@ import json
 import logging
 import math
 import os
+import random
 import re
 import shutil
 import time
@@ -244,6 +245,14 @@ def load_task_data(cfg: FinetuneConfig) -> dict:
     if cfg.task == "d2t":
         data_dir = Path(cfg.data_dir)
         train_inputs, train_refs = load_t2x_split(data_dir, "train")
+        if cfg.n_train_examples:
+            # data-size ablation: seeded subsample, identical for every
+            # checkpoint so the training set stays part of the frozen protocol
+            idx = sorted(random.Random(42).sample(range(len(train_inputs)),
+                                                  cfg.n_train_examples))
+            train_inputs = [train_inputs[i] for i in idx]
+            train_refs = [train_refs[i] for i in idx]
+            logger.info(f"d2t train subsampled to {len(train_inputs)} examples (seed 42)")
         val_inputs, val_refs = load_t2x_split(data_dir, "valid")
         test_inputs, test_refs = load_t2x_split(data_dir, "test")
 

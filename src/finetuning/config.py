@@ -85,6 +85,7 @@ class FinetuneConfig:
     source_prefix: str = ""
     direction_prefix: str = ""
     n_train_pairs: int = 0
+    n_train_examples: int = 0
     direction: str = "en-xh"
     wandb_project: str = "cpt-finetune-dynamics"
     work_dir: str = "/scratch/rmdrak003/finetune_work"
@@ -124,6 +125,11 @@ class FinetuneConfig:
             raise ValueError(
                 f"mt task requires n_train_pairs > 0, got {self.n_train_pairs}"
             )
+        if self.n_train_examples < 0:
+            raise ValueError(
+                f"n_train_examples must be >= 0 (0 = full set), got {self.n_train_examples}")
+        if self.n_train_examples and self.task != "d2t":
+            raise ValueError("n_train_examples is d2t-only; MT sizes via n_train_pairs")
 
     @property
     def effective_batch_size(self) -> int:
@@ -174,6 +180,9 @@ class FinetuneConfig:
             # historical default: omitted so rows written before the field
             # existed keep their hash; xh-en stays in and changes it.
             payload.pop("direction")
+        if not payload.get("n_train_examples"):
+            # same rule: unset (full data) keeps pre-existing hashes intact
+            payload.pop("n_train_examples", None)
         payload["effective_batch_size"] = self.effective_batch_size
         blob = json.dumps(payload, sort_keys=True)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
