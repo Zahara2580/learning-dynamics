@@ -1,4 +1,7 @@
 #!/bin/bash
+# DEAD - superseded by runtime tokenisation in src/finetuning/ (data_t2x.py,
+# data_mt.py). The finetuning harness never reads data/preprocessed/.
+# Kept for the record only; do not run.
 # Tokenize MT (FLORES-200) or D2T (T2X) finetuning data for a given model config.
 # Usage: scripts/preprocess_finetune_data.sh <mt|d2t> <t5|byt5|nguni-byt5> [nproc]
 set -e

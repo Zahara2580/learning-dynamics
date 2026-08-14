@@ -33,13 +33,11 @@ from scripts.diagnostics.crosslingual_alignment import (
     alignment_stats,
 )
 
-DEFAULT_STEPS = [0, 2000, 5000, 8000, 10000]
-
-
 def parse_args() -> Namespace:
     parser = argparse.ArgumentParser(description="Per-layer encoder alignment.")
     parser.add_argument("--model", type=str, required=True, choices=list(MODELS))
-    parser.add_argument("--steps", type=int, nargs="+", default=DEFAULT_STEPS)
+    parser.add_argument("--steps", type=int, nargs="+", default=None,
+                        help="Checkpoint steps (0 = base). Default: base + all 19.")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--dtype", type=str, default="fp32", choices=["fp32", "bf16"])
@@ -98,7 +96,8 @@ def main() -> None:
 
     ckpts = {int(m.group(1)): str(p) for p in root.glob("checkpoint-*")
              if (m := re.fullmatch(r"checkpoint-(\d+)", p.name)) and p.is_dir()}
-    runs = [(s, base_id if s == 0 else ckpts[s]) for s in args.steps if s == 0 or s in ckpts]
+    steps = args.steps if args.steps is not None else [0] + sorted(ckpts)
+    runs = [(s, base_id if s == 0 else ckpts[s]) for s in steps if s == 0 or s in ckpts]
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

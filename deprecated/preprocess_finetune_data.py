@@ -1,4 +1,9 @@
 """
+DEAD - superseded by src/finetuning/data_t2x.py and data_mt.py, which
+tokenise at runtime and feed the T2X tag format VERBATIM (no pipe
+linearisation). Nothing reads this module or its data/preprocessed/
+output. Kept for the record only; do not use.
+
 Tokenise the MT (FLORES-200) and D2T (T2X) datasets for fine-tuning a
 T5-family model (T5, ByT5, Nguni-ByT5).
 
