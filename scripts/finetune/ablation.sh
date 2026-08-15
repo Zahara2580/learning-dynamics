@@ -20,6 +20,16 @@
 MODEL="${1:?usage: sbatch -J <name> ablation.sh <t5|byt5|nguni-byt5> <config basename>}"
 CFG="${2:?usage: sbatch -J <name> ablation.sh <t5|byt5|nguni-byt5> <config basename>}"
 
+# The ablations measure the PHASE-1 (monolingual) checkpoints. Pinned
+# explicitly: auto-discovery is ambiguous now that lafand-bilingual/
+# exists alongside them.
+case "${MODEL}" in
+  t5)         CKPTS=/scratch/rmdrak003/results/t5/lafand-bs8/checkpoints ;;
+  byt5)       CKPTS=/scratch/rmdrak003/results/byt5/lafand-bs4/checkpoints ;;
+  nguni-byt5) CKPTS=/scratch/rmdrak003/results/nguni-byt5/lafand-bs4/checkpoints ;;
+  *) echo "unknown model ${MODEL}"; exit 1 ;;
+esac
+
 git pull
 git log -1
 
@@ -48,6 +58,7 @@ echo "=== ablation ${CFG} : ${MODEL}  start $(date -Is) ==="
 uv run python3 -m src.finetuning.run_finetune \
     --config "configs/finetune/${CFG}.yaml" \
     --model "${MODEL}" \
+    --checkpoints-dir "${CKPTS}" \
     --seed 42 \
     ${WANDB_FLAG}
 
