@@ -69,7 +69,9 @@ def parse_name(stem: str) -> dict | None:
 
 
 def read_preds(path: Path) -> list[str]:
-    rows = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    # split("\n"), not splitlines(): byte models emit U+2028/U+2029, legal
+    # inside a JSON string but treated as line breaks by splitlines().
+    rows = [json.loads(l) for l in path.read_text(encoding="utf-8").split("\n") if l.strip()]
     rows.sort(key=lambda r: r["i"])
     return [r["pred"] for r in rows]
 

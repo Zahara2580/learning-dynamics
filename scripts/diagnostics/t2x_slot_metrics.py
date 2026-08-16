@@ -118,7 +118,15 @@ def main() -> None:
             meta = parse_name(f.stem)
             if meta is None or meta["task"] != "d2t" or (arm, f.name) in done:
                 continue
-            rows = [json.loads(l) for l in f.read_text(encoding="utf-8").splitlines() if l.strip()]
+            try:
+                # split("\n"), not splitlines(): byte models emit U+2028/U+2029,
+                # which are legal inside a JSON string but which splitlines()
+                # would treat as line breaks.
+                rows = [json.loads(l) for l in f.read_text(encoding="utf-8").split("\n")
+                        if l.strip()]
+            except json.JSONDecodeError as exc:
+                print(f"  UNREADABLE, skipped: {f.name} ({exc})")
+                continue
             rows.sort(key=lambda r: r["i"])
             preds = [norm(r["pred"], args.lowercase) for r in rows]
             if len(preds) != len(examples):
