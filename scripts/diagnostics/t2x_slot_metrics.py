@@ -29,6 +29,9 @@ from src.finetuning.data_t2x import load_t2x_split
 ARMS = [
     ("results/finetune/predictions", "d2t-main"),
     ("results_d2t_warmup_20/predictions", "d2t-warmup20"),
+    ("results_d2t_2000/predictions", "d2t-2000"),
+    ("results_d2t_1000/predictions", "d2t-1000"),
+    ("results_d2t_200/predictions", "d2t-200"),
 ]
 ENTITY_RE = re.compile(r"__start_entity__ (.*?) __end_entity__")
 VALUE_RE = re.compile(r"__start_value__ (.*?) __end_value__")
