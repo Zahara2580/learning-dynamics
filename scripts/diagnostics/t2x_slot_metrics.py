@@ -46,6 +46,9 @@ def parse_args() -> Namespace:
                         help="Count every triple occurrence (default: unique per example).")
     parser.add_argument("--lowercase", action="store_true",
                         help="Case-insensitive matching (default: case-sensitive).")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Print a line per file (default: counts only; read the "
+                             "tables with summarize_slot_metrics.py).")
     return parser.parse_args()
 
 
@@ -107,8 +110,7 @@ def main() -> None:
     settings = {"gold_ref": args.gold_ref, "per_triple": args.per_triple,
                 "lowercase": args.lowercase}
     print(f"test examples: {len(examples)}  settings: {settings}")
-    print(f"{'arm':>14} {'model':>11} {'step':>6} {'sel':>11} "
-          f"{'subj F1':>8} {'obj F1':>8}")
+    scored = 0
 
     for pred_dir, arm in ARMS:
         directory = Path(pred_dir)
@@ -144,11 +146,13 @@ def main() -> None:
                    "object": f1_counts(decisions["object"])}
             with open(out_path, "a") as g:
                 g.write(json.dumps(row) + "\n")
-            print(f"{arm:>14} {meta['model']:>11} {meta['step']:>6} "
-                  f"{str(meta['selection']):>11} {row['subject']['f1']:>8.2f} "
-                  f"{row['object']['f1']:>8.2f}")
+            if args.verbose:
+                print(f"{arm:>14} {meta['model']:>11} {meta['step']:>6} "
+                      f"{str(meta['selection']):>11} {row['subject']['f1']:>8.2f} "
+                      f"{row['object']['f1']:>8.2f}")
+            scored += 1
 
-    print(f"rows -> {out_path}")
+    print(f"{scored} file(s) scored -> {out_path}")
 
 
 if __name__ == "__main__":
