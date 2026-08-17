@@ -7,15 +7,18 @@ isiXhosa translations with the model's ENCODER, mean-pool the final
 hidden states over non-padding positions, and measure how aligned the two
 languages' representation spaces are:
 
-Metrics follow Idris et al. ("Can Embedding Similarity Predict
-Cross-Lingual Transfer?") verbatim:
-  cosine_mean   (aka paired) mean cos(eng_i, xho_i) over translation pairs
-  baseline      (aka random) mean over ALL N^2 pairs incl. the diagonal -
+Metrics and names follow Idris et al. ("Can Embedding Similarity Predict
+Cross-Lingual Transfer? A Systematic Study on African Languages"):
+  cosine_mean   mean cos(eng_i, xho_i) over aligned (translation) pairs
+  baseline      mean over ALL N^2 entries of the similarity matrix -
                 the anisotropy floor (Eq. 1's second term)
-  cosine_gap    (aka margin) cosine_mean - baseline: the cross-lingual
-                signal, corrected for "everything is close to everything"
-  P@1           (aka retrieval@1) % of sentences whose nearest neighbour
-                in the other language is the true translation, both ways
+  cosine_gap    cosine_mean - baseline (Eq. 1): the cross-lingual signal,
+                corrected for "everything is close to everything"
+  P@1           % of sentences whose nearest neighbour in the other
+                language is the true translation; asymmetric, both ways
+
+Legacy aliases (paired_cos / random_cos / margin) are still written so
+rows stay readable by anything built before the rename.
 
 Plotted against CPT step this shows whether isiXhosa-only CPT pulls the
 two languages together (byt5 learning isiXhosa) or apart (nguni drifting
@@ -90,8 +93,10 @@ def alignment_stats(eng: torch.Tensor, xho: torch.Tensor) -> dict:
     gap = cosine_mean - baseline
     r_e2x = (sims.argmax(dim=1) == torch.arange(n)).float().mean().item()
     r_x2e = (sims.argmax(dim=0) == torch.arange(n)).float().mean().item()
-    return {"paired_cos": cosine_mean, "random_cos": baseline,
-            "margin": gap, "cosine_mean": cosine_mean, "cosine_gap": gap,
+    return {"cosine_mean": cosine_mean, "baseline": baseline, "cosine_gap": gap,
+            "p_at_1_e2x": r_e2x, "p_at_1_x2e": r_x2e,
+            # legacy aliases, pre-rename readers
+            "paired_cos": cosine_mean, "random_cos": baseline, "margin": gap,
             "retrieval_e2x": r_e2x, "retrieval_x2e": r_x2e}
 
 
@@ -129,7 +134,7 @@ def main() -> None:
     out_path = out_dir / f"{args.model}.jsonl"
 
     print(f"model={args.model}  pairs={len(eng_texts)}  device={device}  dtype={args.dtype}")
-    print(f"{'step':>7} {'paired':>8} {'random':>8} {'margin':>8} {'R@1 e>x':>8} {'R@1 x>e':>8} {'sec':>5}")
+    print(f"{'step':>7} {'cos_mean':>9} {'baseline':>9} {'cos_gap':>8} {'P@1 e>x':>8} {'P@1 x>e':>8} {'sec':>5}")
 
     results = []
     for step, path in runs:
@@ -140,10 +145,10 @@ def main() -> None:
         eng = encode(encoder, tokenizer, eng_texts, args.batch_size, device)
         xho = encode(encoder, tokenizer, xho_texts, args.batch_size, device)
         stats = alignment_stats(eng, xho)
-        results.append((step, stats["margin"]))
-        print(f"{step:>7} {stats['paired_cos']:>8.4f} {stats['random_cos']:>8.4f} "
-              f"{stats['margin']:>8.4f} {stats['retrieval_e2x']:>8.2%} "
-              f"{stats['retrieval_x2e']:>8.2%} {time.time() - t0:>5.0f}")
+        results.append((step, stats["cosine_gap"]))
+        print(f"{step:>7} {stats['cosine_mean']:>9.4f} {stats['baseline']:>9.4f} "
+              f"{stats['cosine_gap']:>8.4f} {stats['p_at_1_e2x']:>8.2%} "
+              f"{stats['p_at_1_x2e']:>8.2%} {time.time() - t0:>5.0f}")
         with open(out_path, "a") as f:
             f.write(json.dumps({"model": args.model, "step": step, **stats,
                                 "n_pairs": len(eng_texts), "dtype": args.dtype}) + "\n")
@@ -154,11 +159,11 @@ def main() -> None:
     cpt = [(s, m) for s, m in results if s > 0]
     if len(cpt) >= 3:
         import numpy as np
-        steps_, margins_ = zip(*cpt)
+        steps_, gaps_ = zip(*cpt)
         ra = np.argsort(np.argsort(steps_)).astype(float)
-        rb = np.argsort(np.argsort(margins_)).astype(float)
+        rb = np.argsort(np.argsort(gaps_)).astype(float)
         rho = float(np.corrcoef(ra, rb)[0, 1])
-        print(f"\nrho(step, margin): {rho:+.3f}   "
+        print(f"\nrho(step, cosine_gap): {rho:+.3f}   "
               f"(positive = CPT aligns eng/xho spaces, negative = drives them apart)")
     print(f"rows appended to {out_path}")
 

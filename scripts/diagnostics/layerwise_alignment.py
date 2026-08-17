@@ -114,13 +114,13 @@ def main() -> None:
         xho_layers = encode_layers(encoder, tokenizer, xho_texts, args.batch_size, device)
 
         print(f"\nstep {step}  ({len(eng_layers)} layers, {time.time() - t0:.0f}s to encode)")
-        print(f"{'layer':>6} {'paired':>8} {'random':>8} {'margin':>8} {'R@1 e>x':>8} {'R@1 x>e':>8}")
+        print(f"{'layer':>6} {'cos_mean':>9} {'baseline':>9} {'cos_gap':>8} {'P@1 e>x':>8} {'P@1 x>e':>8}")
         with open(out_path, "a") as f:
             for layer, (e, x) in enumerate(zip(eng_layers, xho_layers)):
                 stats = alignment_stats(e, x)
-                print(f"{layer:>6} {stats['paired_cos']:>8.4f} {stats['random_cos']:>8.4f} "
-                      f"{stats['margin']:>8.4f} {stats['retrieval_e2x']:>8.2%} "
-                      f"{stats['retrieval_x2e']:>8.2%}")
+                print(f"{layer:>6} {stats['cosine_mean']:>9.4f} {stats['baseline']:>9.4f} "
+                      f"{stats['cosine_gap']:>8.4f} {stats['p_at_1_e2x']:>8.2%} "
+                      f"{stats['p_at_1_x2e']:>8.2%}")
                 f.write(json.dumps({"model": args.model, "step": step, "layer": layer,
                                     **stats, "n_pairs": len(eng_texts),
                                     "dtype": args.dtype}) + "\n")

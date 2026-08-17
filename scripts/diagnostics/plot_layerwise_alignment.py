@@ -15,12 +15,13 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
+# Idris et al. terminology; second element is the pre-rename key.
 METRICS = {
-    "paired_cos": "Paired cosine",
-    "random_cos": "Random cosine",
-    "margin": "Margin",
-    "retrieval_e2x": "Retrieval accuracy Eng to Xho",
-    "retrieval_x2e": "Retrieval accuracy Xho to Eng",
+    "cosine_mean": ("Cosine mean", "paired_cos"),
+    "baseline": ("Baseline similarity", "random_cos"),
+    "cosine_gap": ("Cosine gap", "margin"),
+    "p_at_1_e2x": ("P@1 eng to xho", "retrieval_e2x"),
+    "p_at_1_x2e": ("P@1 xho to eng", "retrieval_x2e"),
 }
 
 
@@ -42,11 +43,12 @@ def main() -> None:
         model_rows = [r for r in rows if r["model"] == model]
         steps = sorted({r["step"] for r in model_rows})
         colours = plt.cm.viridis([i / max(1, len(steps) - 1) for i in range(len(steps))])
-        for key, label in METRICS.items():
+        for key, (label, legacy) in METRICS.items():
             series = defaultdict(list)
             for r in model_rows:
-                if key in r:
-                    series[r["step"]].append((r["layer"], r[key]))
+                value = r.get(key, r.get(legacy))
+                if value is not None:
+                    series[r["step"]].append((r["layer"], value))
             if not series:
                 continue
             figure, axis = plt.subplots(figsize=(8, 5))

@@ -22,11 +22,14 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 MODEL_ORDER = ["t5", "byt5", "nguni-byt5"]
 
+# Idris et al. terminology; second element is the pre-rename key so old
+# rows still plot.
 ALIGNMENT_METRICS = {
-    "margin": "Cross-lingual margin",
-    "retrieval_e2x": "Retrieval accuracy Eng to Xho",
-    "retrieval_x2e": "Retrieval accuracy Xho to Eng",
-    "paired_cos": "Paired cosine",
+    "cosine_gap": ("Cosine gap", "margin"),
+    "p_at_1_e2x": ("P@1 eng to xho", "retrieval_e2x"),
+    "p_at_1_x2e": ("P@1 xho to eng", "retrieval_x2e"),
+    "cosine_mean": ("Cosine mean", "paired_cos"),
+    "baseline": ("Baseline similarity", "random_cos"),
 }
 ZEROSHOT_METRICS = {"chrf": "chrF", "bleu": "BLEU", "zero_shot_loss": "Loss"}
 
@@ -77,11 +80,12 @@ def plot_alignment(directory: Path) -> None:
         return
     out = directory / "plots"
     out.mkdir(exist_ok=True)
-    for key, label in ALIGNMENT_METRICS.items():
+    for key, (label, legacy) in ALIGNMENT_METRICS.items():
         series = defaultdict(list)
         for r in rows:
-            if key in r:
-                series[r["model"]].append((r["step"], r[key]))
+            value = r.get(key, r.get(legacy))
+            if value is not None:
+                series[r["model"]].append((r["step"], value))
         if series:
             draw(dict(series), label, label, out / f"{key}.png")
 
