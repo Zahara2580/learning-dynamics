@@ -187,8 +187,20 @@ def parse_args() -> Namespace:
                              "checkpoints/ and resume/ dirs, for concurrent trials.")
     parser.add_argument("--wandb-run-name", type=str, default=None,
                         help="Override the wandb_run_name from the config.")
-    parser.add_argument("--model-dtype", type=str, choices=["bf16", "fp32"], default="bf16",
-                        help="Dtype to load and train the model in.")
+    parser.add_argument("--model-dtype", type=str, choices=["fp32", "bf16"], default="fp32",
+                        help="PARAMETER dtype. fp32 is the only correct choice for "
+                             "training: bf16 parameters make AdamW write updates into "
+                             "an 8-bit mantissa, and any update smaller than half the "
+                             "local representable gap is silently discarded. Measured "
+                             "on our own phase-1 runs: 99.83%% of t5's embeddings and "
+                             "86.81%% of all its parameters never changed in 10k steps "
+                             "(notes/bf16_finding.md). bf16 is kept ONLY to reproduce "
+                             "that broken arm deliberately. Mixed-precision compute is "
+                             "separate - see --no-amp.")
+    parser.add_argument("--no-amp", action="store_true",
+                        help="Disable bf16 autocast. Autocast is ON by default on GPU "
+                             "and is safe: it casts activations only, never the master "
+                             "weights, and is what src/finetuning/run_finetune.py does.")
     parser.add_argument(
         "--sortish-sampler",
         action="store_true",
@@ -227,18 +239,36 @@ def main() -> None:
         f"effective batch size: {batch_size * gradient_accumulation_steps}"
     )
 
-    use_bf16 = args.model_dtype == "bf16"
+    # PARAMETER dtype and COMPUTE dtype are independent, and conflating them is
+    # what broke phase 1. Parameters must be fp32 so AdamW has the resolution to
+    # record an update; bf16 autocast then halves activation memory at no cost,
+    # casting activations only. This mirrors run_finetune.py, which had it right.
+    param_dtype = torch.bfloat16 if args.model_dtype == "bf16" else torch.float32
+    use_amp = not args.no_amp and torch.cuda.is_available()
+
+    if param_dtype is torch.bfloat16:
+        logger.warning(
+            "=" * 78 + "\n"
+            "  --model-dtype bf16: PARAMETERS will be bf16 and most optimiser\n"
+            "  updates will be silently rounded away. This reproduces the phase-1\n"
+            "  bug on purpose (see notes/bf16_finding.md). If you did not mean to\n"
+            "  create the broken contrast arm, kill this job and drop the flag.\n"
+            + "=" * 78)
+
     tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
     model = AutoModelForSeq2SeqLM.from_pretrained(
-        config.model_name_or_path,
-        torch_dtype=torch.bfloat16 if use_bf16 else torch.float32,
+        config.model_name_or_path, dtype=param_dtype,
     )
     actual_dtype = next(model.parameters()).dtype
-    logger.info(f"Requested model dtype: {args.model_dtype}, actual loaded dtype: {actual_dtype}")
-    if use_bf16 and actual_dtype != torch.bfloat16:
-        raise ValueError(f"Requested bf16 but model loaded as {actual_dtype} - dtype mismatch.")
-    if not use_bf16 and actual_dtype != torch.float32:
-        raise ValueError(f"Requested fp32 but model loaded as {actual_dtype} - dtype mismatch.")
+    if actual_dtype != param_dtype:
+        raise ValueError(f"Requested {param_dtype} but model loaded as {actual_dtype}.")
+
+    # One unmissable line in every job log, so a precision regression can never
+    # again be invisible after the fact.
+    logger.info(
+        f"PRECISION | parameters={actual_dtype} | optimiser state={actual_dtype} | "
+        f"bf16 autocast={use_amp} | "
+        f"{'OK' if actual_dtype == torch.float32 else 'BROKEN-ON-PURPOSE'}")
 
     logger.info(f"Loading lafand-preprocessed data from {args.data_dir}...")
     dataset = LafandSeq2SeqDataset(args.data_dir, type_path="train")
@@ -308,7 +338,7 @@ def main() -> None:
         save_steps=args.save_steps,
         save_total_limit=1,
         logging_steps=1,
-        bf16=use_bf16,
+        bf16=use_amp,          # activations only; master weights stay param_dtype
         eval_strategy="steps",
         eval_steps=args.eval_steps,
         load_best_model_at_end=early_stopping_enabled,
