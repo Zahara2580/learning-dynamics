@@ -88,18 +88,26 @@ class CustomCheckpointCallback(TrainerCallback):
             model = kwargs.get("model")
             if model is not None:
                 checkpoint_path = self.save_dir / f"checkpoint-{state.global_step}"
-                # save_pretrained on a state_dict cast to bf16, rather than
-                # model.to(torch.bfloat16), so the live training model (and
-                # its optimizer, which is tied to its param dtype) is never
-                # mutated mid-training - only the on-disk snapshot is bf16.
-                bf16_state_dict = {k: v.to(torch.bfloat16) for k, v in model.state_dict().items()}
-                model.save_pretrained(checkpoint_path, state_dict=bf16_state_dict)
+                # Snapshot in the SAME dtype the model is training in. Cast a
+                # copy, never model.to(dtype): mutating the live model would
+                # also change its optimiser state dtype mid-run.
+                #
+                # Following the param dtype matters for fp32 runs: a bf16
+                # snapshot quantises to an 8-bit mantissa, and at T5's embedding
+                # magnitude the gap between representable values is 0.0625, so
+                # genuine drift below that would be erased at save time and a
+                # correct fp32 run would still look frozen (notes/bf16_finding.md).
+                # For bf16 runs this is byte-identical to the previous behaviour.
+                save_dtype = next(model.parameters()).dtype
+                out_state_dict = {k: v.to(save_dtype) for k, v in model.state_dict().items()}
+                model.save_pretrained(checkpoint_path, state_dict=out_state_dict)
                 # Save the tokenizer too, so each checkpoint is a fully
                 # self-contained model dir that finetuning can point at
                 # directly (no need to know the base model name).
                 if self.tokenizer is not None:
                     self.tokenizer.save_pretrained(checkpoint_path)
-                logger.info(f"Saved weights-only schedule checkpoint (bf16): {checkpoint_path}")
+                logger.info(f"Saved weights-only schedule checkpoint "
+                            f"({save_dtype}): {checkpoint_path}")
         return control
 
 

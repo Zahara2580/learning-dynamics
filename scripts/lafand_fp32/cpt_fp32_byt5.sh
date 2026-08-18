@@ -18,10 +18,11 @@
 # effective batch (1024), same lr/warmup/steps, same sortish sampler - so the
 # two arms differ ONLY in parameter precision.
 #
-# NOTE --mixed_precision bf16 below is CORRECT and must stay. It is autocast:
-# it casts activations only, never the master weights. The phase-1 bug was
-# torch_dtype=bfloat16 on the model load, which is now gone (fp32 is the
-# default, and --model-dtype fp32 is passed explicitly here for the record).
+# --model-dtype fp32 makes the trainer set bf16=False, so accelerate is told
+# --mixed_precision no to match; transformers errors on a mismatch. Without
+# autocast the activations are fp32 too, roughly doubling activation memory:
+# t5 ~18GB and byt5 ~30GB of the L40S's 48GB, so it fits. Checkpoints are
+# saved in the training dtype, so this arm archives fp32 snapshots.
 #
 # Writes to a NEW run-subdir so the bf16 arm is never resumed or overwritten.
 # 6h links + chaining: short jobs schedule far faster on a congested queue.
@@ -56,7 +57,7 @@ uv sync --frozen
 # --resume is always passed: harmless on first run, resumes the chain after.
 uv run accelerate launch \
     --num_processes ${SLURM_GPUS_ON_NODE:-1} \
-    --mixed_precision bf16 \
+    --mixed_precision no \
     --main_process_port $((29500 + SLURM_JOB_ID % 1000)) \
     --module src.pretraining.continued_pretrain_lafand \
     --model-config configs/models/byt5.yaml \
