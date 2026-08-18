@@ -2,7 +2,7 @@
 #SBATCH --account=l40sfree
 #SBATCH --partition=l40s
 #SBATCH --nodes=1 --ntasks=1 --gres=gpu:l40s:1
-#SBATCH --time=06:00:00
+#SBATCH --time=48:00:00
 #SBATCH --job-name="cpt-fp32-nguni-byt5"
 #SBATCH --mail-user=rmdrak003@myuct.ac.za
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -25,8 +25,8 @@
 # saved in the training dtype, so this arm archives fp32 snapshots.
 #
 # Writes to a NEW run-subdir so the bf16 arm is never resumed or overwritten.
-# 6h links + chaining: short jobs schedule far faster on a congested queue.
-#   sbatch --export=ALL,CHAIN_JOBS=6 scripts/lafand_fp32/cpt_fp32_<model>.sh
+# 48h wall clock. --resume makes this restart-safe; chain if 48h is short:
+#   sbatch --export=ALL,CHAIN_JOBS=2 scripts/lafand_fp32/cpt_fp32_<model>.sh
 
 # Update to latest commit
 git pull
