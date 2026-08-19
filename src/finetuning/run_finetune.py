@@ -423,7 +423,16 @@ def run_one_checkpoint(
         data["val_sources"], data["val_targets"], tokenizer,
         cfg.max_source_length, cfg.max_target_length)
 
-    work_dir = Path(cfg.work_dir) / f"{model_name}_{step}_{cfg.task}_{seed}"
+    # The config hash is part of the path because {model}_{step}_{task}_{seed}
+    # alone is NOT unique across ablation arms: mt_10k, mt_25k, mt_xhen_10k and
+    # mt_xhen_25k all share task="mt", so concurrent arms collided on one
+    # directory - and this function rmtree's it on entry and exit. That crashed
+    # the last_epoch reload when another arm deleted the directory mid-run, and
+    # could silently have loaded another arm's identically-numbered checkpoint
+    # (mt_10k and mt_xhen_10k both end at checkpoint-3125, in opposite
+    # translation directions).
+    work_dir = (Path(cfg.work_dir) /
+                f"{model_name}_{step}_{cfg.task}_{seed}_{cfg.hash()[:8]}")
     if work_dir.exists():
         # Leftovers from a job killed mid-run; the results row was never
         # written, so this run is redone from scratch.
