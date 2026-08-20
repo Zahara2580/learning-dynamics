@@ -57,11 +57,19 @@ for model, (tok_id, ddir) in MODELS.items():
     decoded = tok.decode(first, skip_special_tokens=True)
     print(f"  train.source line 1, decoded ({len(first)} tokens):")
     print(f"    {decoded[:150]!r}")
+    # Span corruption masks ~15% of tokens, so an exact substring test fails
+    # even on the correct source. Compare word OVERLAP instead, and - the
+    # decisive part - check whether the example runs PAST where each
+    # candidate's first line ends.
+    dec_words = set(w.strip(".,()|").lower() for w in decoded.split())
     for name, line in first_line.items():
-        # span corruption removes ~15%, so compare the opening words
-        head = " ".join(line.split()[:6])
-        hit = head[:20].lower() in decoded[:200].lower()
-        print(f"    matches start of {name:14}: {hit}")
+        cand = [w.strip(".,()|").lower() for w in line.split()]
+        overlap = sum(1 for w in cand[:40] if w in dec_words) / min(len(cand), 40)
+        beyond = ""
+        tail = cand[-3:]
+        if tail and not any(w in dec_words for w in tail):
+            beyond = "  (example does NOT stop where this file's line 1 stops)"
+        print(f"    word overlap with {name:14}: {overlap:.0%}{beyond}")
 
     # segment length distribution - the decisive quantitative check
     lens = []
@@ -86,5 +94,12 @@ for model, (tok_id, ddir) in MODELS.items():
         if not os.path.exists(path):
             continue
         nlines = sum(1 for _ in open(path, encoding="utf-8"))
-        print(f"    if built from {name:14}: >= {nlines:,} segments "
-              f"({'CONSISTENT' if abs(total-nlines)/max(total,1) < 0.5 else 'INCONSISTENT'})")
+        # each source line yields ceil(tokens/512) segments, so segments >= lines
+        ratio = total / nlines
+        if ratio < 0.99:
+            verdict = "IMPOSSIBLE - fewer segments than input lines"
+        elif ratio < 1.05:
+            verdict = "would mean ~1 segment per line (short lines)"
+        else:
+            verdict = f"{ratio:.1f} segments per line (long, multi-segment inputs)"
+        print(f"    from {name:14} ({nlines:>8,} lines): {verdict}")
