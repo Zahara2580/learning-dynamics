@@ -19,19 +19,20 @@ from pathlib import Path
 
 from huggingface_hub import HfApi
 
-REPOS = {
-    "t5": ("/scratch/rmdrak003/results/t5/lafand-bs8/checkpoints", "cpt-xhosa-t5-large"),
-    "byt5": ("/scratch/rmdrak003/results/byt5/lafand-bs4/checkpoints", "cpt-xhosa-byt5-large"),
-    "nguni-byt5": ("/scratch/rmdrak003/results/nguni-byt5/lafand-bs4/checkpoints",
-                   "cpt-xhosa-nguni-byt5-large"),
-}
+# Imported, not duplicated: this list previously drifted from the backup
+# script's, so a newly-backed-up arm could not be verified until someone
+# noticed and edited a second file.
+from src.utils.backup_checkpoints import WINNERS as REPOS
+
 # not uploaded by the backup (weights-only) - skip locally too
 NOT_UPLOADED = ["*/optimizer.pt", "*/scheduler.pt", "*/rng_state*"]
 
 
 def parse_args() -> Namespace:
     parser = argparse.ArgumentParser(description="Verify HF backup == local checkpoints.")
-    parser.add_argument("--model", type=str, default="all", choices=[*REPOS, "all"])
+    parser.add_argument("--model", type=str, nargs="+", default=["all"],
+                        choices=[*REPOS, "all"],
+                        help="One or more arms, or 'all'.")
     parser.add_argument("--user", type=str, default=None,
                         help="HF namespace; default: whoami() of the active token.")
     parser.add_argument("--local-root", type=str, default=None, help="Override the local dir.")
@@ -120,7 +121,7 @@ def verify_model(api: HfApi, model: str, args: Namespace) -> bool:
 def main() -> None:
     args = parse_args()
     api = HfApi()
-    models = list(REPOS) if args.model == "all" else [args.model]
+    models = list(REPOS) if "all" in args.model else list(dict.fromkeys(args.model))
     results = {m: verify_model(api, m, args) for m in models}
     print("\n" + "  ".join(f"{m}: {'OK' if v else 'FAILED'}" for m, v in results.items()))
     if not all(results.values()):
