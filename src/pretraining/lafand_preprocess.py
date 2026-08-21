@@ -20,14 +20,18 @@ defines (100 for t5, 125 for byt5) and would encode garbage. 512 bounds
 runs to ~65. Seeded for reproducibility.
 
 Usage (once per model per split):
-    uv run python3 -m src.pretraining.lafand_preprocess --input-text /scratch/rmdrak003/data/lafand/lines/train.xh --model-config configs/models/byt5.yaml --output-dir /scratch/rmdrak003/data/lafand/byt5 --type-path train
-    uv run python3 -m src.pretraining.lafand_preprocess --input-text /scratch/rmdrak003/data/lafand/lines/dev.xh --model-config configs/models/byt5.yaml --output-dir /scratch/rmdrak003/data/lafand/byt5 --type-path dev
+    uv run python3 -m src.pretraining.lafand_preprocess --input-text /scratch/rmdrak003/data/lafand/lines-passage/train.xh --model-config configs/models/byt5.yaml --output-dir /scratch/rmdrak003/data/lafand/byt5 --type-path train
+    uv run python3 -m src.pretraining.lafand_preprocess --input-text /scratch/rmdrak003/data/lafand/lines-passage/dev.xh --model-config configs/models/byt5.yaml --output-dir /scratch/rmdrak003/data/lafand/byt5 --type-path dev
 """
 
 import argparse
+import hashlib
+import json
 import logging
 import random
+import sys
 from argparse import Namespace
+from datetime import datetime, timezone
 from pathlib import Path
 
 from tqdm import tqdm
@@ -42,6 +46,13 @@ logger = logging.getLogger(__name__)
 # succeeds with p=0.85 per attempt; this cap exists only to guarantee
 # termination on pathological lines and statistically never triggers.
 MAX_RESAMPLE_ATTEMPTS = 1000
+
+
+def _head_digest(path: str, n_bytes: int = 1 << 20) -> str:
+    """sha256 of the first 1MB of the input, so a later reader can confirm the
+    file on disk is still the one that was consumed."""
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read(n_bytes)).hexdigest()
 
 
 def racha_detection(lista):
@@ -195,12 +206,37 @@ def main() -> None:
     with open(output_dir / f"{args.type_path}.target", "w") as f:
         f.writelines(targets)
 
+    # Provenance beside the data. Without this, "which corpus fed CPT?" is only
+    # answerable by decoding token ids and comparing segment-length statistics -
+    # which is what it took once, during write-up, when two similar exports of
+    # the corpus existed side by side. See notes/things_to_fix_next_pipeline.md A9.
+    provenance = {
+        "input_text": str(Path(args.input_text).resolve()),
+        "input_lines": n_passages,
+        "input_sha256_first_1mb": _head_digest(args.input_text),
+        "model_config": args.model_config,
+        "tokenizer": config.model_name_or_path,
+        "max_line_tokens": args.max_line_tokens,
+        "drop_last_window": args.drop_last_window,
+        "seed": args.seed,
+        "noise_density": 0.15,
+        "first_sentinel_id": first_sentinel,
+        "n_sentinels_available": len(sentinel_ids),
+        "output_examples": n_windows,
+        "skipped": n_skipped,
+        "argv": sys.argv,
+        "written_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    prov_path = output_dir / f"{args.type_path}.provenance.json"
+    prov_path.write_text(json.dumps(provenance, indent=2) + "\n")
+
     logger.info(
-        f"Wrote {n_windows:,} window-examples from {n_passages:,} passages to "
+        f"Wrote {n_windows:,} segment-examples from {n_passages:,} passages to "
         f"{output_dir}/{args.type_path}.source/.target "
-        f"(mean {total_tokens / max(n_windows, 1):.0f} tokens/window; "
-        f"{n_windows / max(n_passages, 1):.2f} windows/passage; {n_skipped:,} skipped)."
+        f"(mean {total_tokens / max(n_windows, 1):.0f} tokens/segment; "
+        f"{n_windows / max(n_passages, 1):.2f} segments/passage; {n_skipped:,} skipped)."
     )
+    logger.info(f"Provenance written to {prov_path}")
 
 
 if __name__ == "__main__":

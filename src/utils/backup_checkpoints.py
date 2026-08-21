@@ -39,12 +39,24 @@ from huggingface_hub import HfApi
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Winner arm per model -> (checkpoints dir, HF repo basename).
+# Arm -> (checkpoints dir, HF repo basename).
+#
+# Phase 1 (monolingual isiXhosa) and phase 2 (bilingual isiXhosa+English) live
+# in separate run-subdirs and go to separate repos, so the two arms can never
+# be confused for each other on the Hub.
 WINNERS = {
+    # phase 1: monolingual isiXhosa
     "t5": ("/scratch/rmdrak003/results/t5/lafand-bs8/checkpoints", "cpt-xhosa-t5-large"),
     "byt5": ("/scratch/rmdrak003/results/byt5/lafand-bs4/checkpoints", "cpt-xhosa-byt5-large"),
     "nguni-byt5": ("/scratch/rmdrak003/results/nguni-byt5/lafand-bs4/checkpoints",
                    "cpt-xhosa-nguni-byt5-large"),
+    # phase 2: bilingual isiXhosa + English
+    "t5-bilingual": ("/scratch/rmdrak003/results/t5/lafand-bilingual/checkpoints",
+                     "cpt-bilingual-t5-large"),
+    "byt5-bilingual": ("/scratch/rmdrak003/results/byt5/lafand-bilingual/checkpoints",
+                       "cpt-bilingual-byt5-large"),
+    "nguni-byt5-bilingual": ("/scratch/rmdrak003/results/nguni-byt5/lafand-bilingual/checkpoints",
+                             "cpt-bilingual-nguni-byt5-large"),
 }
 
 # Trainer state the finetuning sweep does not need (default mode only).

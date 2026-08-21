@@ -52,16 +52,27 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 # base model on the Hub (step 0), backup repo holding the CPT checkpoints,
 # and whether the tokenizer is raw-byte (changes the word alignment path)
 MODELS = {
+    # phase 1: monolingual isiXhosa CPT
     "t5":         ("google-t5/t5-large",
                    "ChonkeyJellyfish/cpt-xhosa-t5-large", False),
     "byt5":       ("google/byt5-large",
                    "ChonkeyJellyfish/cpt-xhosa-byt5-large", True),
     "nguni-byt5": ("francois-meyer/nguni-byt5-large",
-                   "ChonkeyJellyfish/cpt-xhosa-nguni-byt5-large", True),  # PRIVATE
+                   "ChonkeyJellyfish/cpt-xhosa-nguni-byt5-large", True),   # PRIVATE
+    # phase 2: bilingual isiXhosa + English CPT. Same base models, same
+    # schedule - the ONLY difference is that English passages were mixed into
+    # the corpus. Step 0 is therefore identical to the phase-1 arm, so the two
+    # curves start from the same point and any divergence is the English.
+    "byt5-bilingual": ("google/byt5-large",
+                       "ChonkeyJellyfish/cpt-bilingual-byt5-large", True),  # PRIVATE
+    "t5-bilingual":   ("google-t5/t5-large",
+                       "ChonkeyJellyfish/cpt-bilingual-t5-large", False),   # PRIVATE
 }
 ALL_STEPS = [0] + list(range(100, 1001, 100)) + list(range(2000, 10001, 1000))
 
-RUN_MODELS = ["t5", "byt5"]        # add "nguni-byt5" after notebook_login()
+# One at a time, so results land before the next download starts. Bilingual
+# repos are private -> run CELL 2 (notebook_login) first.
+RUN_MODELS = ["byt5-bilingual"]    # then ["t5-bilingual"], then the phase-1 arms
 POOLINGS = ["last", "first", "mean"]   # "last" is the headline (Dang et al.)
 LAYER_STRIDE = 1                   # 1 = every layer. Raise to 2 if RAM is tight.
 
@@ -428,7 +439,7 @@ def max_len_for(is_byte):
 # Probes the un-adapted base model at the final layer with last-token
 # pooling. If accuracy does not clearly beat the majority baseline, the
 # word alignment in CELL 5 is wrong and the sweep must not run.
-GATE_MODEL = "t5"
+GATE_MODEL = "byt5-bilingual"
 
 _base_id, _, _is_byte = MODELS[GATE_MODEL]
 _tok = AutoTokenizer.from_pretrained(_base_id)

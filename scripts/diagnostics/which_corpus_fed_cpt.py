@@ -57,19 +57,17 @@ for model, (tok_id, ddir) in MODELS.items():
     decoded = tok.decode(first, skip_special_tokens=True)
     print(f"  train.source line 1, decoded ({len(first)} tokens):")
     print(f"    {decoded[:150]!r}")
-    # Span corruption masks ~15% of tokens, so an exact substring test fails
-    # even on the correct source. Compare word OVERLAP instead, and - the
-    # decisive part - check whether the example runs PAST where each
-    # candidate's first line ends.
-    dec_words = set(w.strip(".,()|").lower() for w in decoded.split())
+    # THE DECISIVE TEST: a segment is produced by SPLITTING one input line, so
+    # it can never contain more text than that line holds. If the decoded
+    # example is longer than a candidate's first line, that candidate cannot
+    # have produced it. Robust to span corruption, which only ever REMOVES
+    # text - so the true source line is at least as long as what we decode.
+    print(f"\n  can each candidate's line 1 even contain this example?")
     for name, line in first_line.items():
-        cand = [w.strip(".,()|").lower() for w in line.split()]
-        overlap = sum(1 for w in cand[:40] if w in dec_words) / min(len(cand), 40)
-        beyond = ""
-        tail = cand[-3:]
-        if tail and not any(w in dec_words for w in tail):
-            beyond = "  (example does NOT stop where this file's line 1 stops)"
-        print(f"    word overlap with {name:14}: {overlap:.0%}{beyond}")
+        verdict = ("IMPOSSIBLE - example is longer than the whole input line"
+                   if len(decoded) > len(line) else "possible")
+        print(f"    {name:14} line 1 = {len(line):>6,} chars vs example "
+              f"{len(decoded):>6,} chars decoded   -> {verdict}")
 
     # segment length distribution - the decisive quantitative check
     lens = []

@@ -11,8 +11,11 @@ length, since empty lines crash the lafand loader.
 """
 
 import argparse
+import json
 import logging
+import sys
 from argparse import Namespace
+from datetime import datetime, timezone
 from pathlib import Path
 
 from datasets import load_from_disk
@@ -75,6 +78,24 @@ def main() -> None:
             f.write(line + "\n")
             n_lines += 1
             total_chars += len(line)
+
+    # Provenance beside the output. This script is run by hand, so without a
+    # record here nothing downstream can say which corpus/split it consumed -
+    # which is exactly how two similar exports became ambiguous once.
+    # See notes/things_to_fix_next_pipeline.md A9.
+    (output_path.parent / f"{output_path.name}.provenance.json").write_text(
+        json.dumps({
+            "input_corpus": str(Path(args.input).resolve()),
+            "split": args.split,
+            "min_chars": args.min_chars,
+            "sample_n": args.sample_n,
+            "sample_seed": args.sample_seed,
+            "passages_written": n_lines,
+            "passages_dropped": n_dropped,
+            "characters_written": total_chars,
+            "argv": sys.argv,
+            "written_utc": datetime.now(timezone.utc).isoformat(),
+        }, indent=2) + "\n")
 
     char_loss = dropped_chars / max(total_chars + dropped_chars, 1)
     logger.info(
