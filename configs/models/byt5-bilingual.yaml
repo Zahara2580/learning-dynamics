@@ -1,0 +1,23 @@
+# Phase-2 (bilingual isiXhosa+English) identity for byt5.
+# Identical CPT hyperparameters to configs/models/byt5.yaml - this file
+# exists so finetuning can be launched with --model byt5-bilingual, which
+# makes the arm self-identifying in results.jsonl and in prediction
+# filenames. Without it both arms would write rows saying model=byt5.
+# Model Configuration
+model_name_or_path: "google/byt5-large"
+max_seq_length: 512
+max_target_length: 512
+
+# Training Configuration
+learning_rate: 1.0e-4
+per_device_batch_size: 8
+gradient_accumulation_steps: 128
+total_steps: 10000
+warmup_steps: 5000
+
+# Checkpointing Configuration
+output_dir: "/scratch/rmdrak003/results/byt5/lafand-bilingual"
+
+# Experiment Tracking
+wandb_project: "cpt-learning-dynamics"
+wandb_run_name: "byt5-xho-eng-bilingual"

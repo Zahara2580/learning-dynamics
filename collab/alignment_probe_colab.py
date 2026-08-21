@@ -26,7 +26,7 @@ disk, so each checkpoint is downloaded, used, and deleted before the next.
 # (datasets is already imported at Colab startup, so the new version only
 # takes effect after a restart. You do not need to re-run CELL 1 after it.)
 
-# %% CELL 2 - (only needed for the PRIVATE nguni repo; skip for t5/byt5)
+# %% CELL 2 - login. Not needed: every repo above is public.
 # from huggingface_hub import notebook_login
 # notebook_login()
 
@@ -42,14 +42,24 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 # base model on the Hub (step 0), and the backup repo holding checkpoints
 MODELS = {
-    "t5": ("google-t5/t5-large", "ChonkeyJellyfish/cpt-xhosa-t5-large"),
-    "byt5": ("google/byt5-large", "ChonkeyJellyfish/cpt-xhosa-byt5-large"),
+    # phase 1: monolingual isiXhosa CPT
+    "t5":         ("google-t5/t5-large", "ChonkeyJellyfish/cpt-xhosa-t5-large"),
+    "byt5":       ("google/byt5-large",  "ChonkeyJellyfish/cpt-xhosa-byt5-large"),
     "nguni-byt5": ("francois-meyer/nguni-byt5-large",
-                   "ChonkeyJellyfish/cpt-xhosa-nguni-byt5-large"),   # PRIVATE
+                   "ChonkeyJellyfish/cpt-xhosa-nguni-byt5-large"),
+    # phase 2: bilingual isiXhosa + English CPT. Same base model, same schedule,
+    # same step budget - the only difference is English mixed into the corpus,
+    # so step 0 is identical to the phase-1 arm and the curves start together.
+    "byt5-bilingual":       ("google/byt5-large",
+                             "ChonkeyJellyfish/cpt-bilingual-byt5-large"),
+    "t5-bilingual":         ("google-t5/t5-large",
+                             "ChonkeyJellyfish/cpt-bilingual-t5-large"),
+    "nguni-byt5-bilingual": ("francois-meyer/nguni-byt5-large",
+                             "ChonkeyJellyfish/cpt-bilingual-nguni-byt5-large"),
 }
 ALL_STEPS = [0] + list(range(100, 1001, 100)) + list(range(2000, 10001, 1000))
 
-RUN_MODELS = ["t5", "byt5"]        # add "nguni-byt5" after notebook_login()
+RUN_MODELS = ["byt5-bilingual"]    # then ["t5-bilingual"] in a second pass
 BATCH_SIZE = 16                    # drop to 8 if the byte models OOM
 DTYPE = torch.float32              # matches the HPC runs; do not change
 OUT = Path("/content/alignment")
@@ -242,7 +252,8 @@ for model_name in RUN_MODELS:
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-MODEL_ORDER = ["t5", "byt5", "nguni-byt5"]
+MODEL_ORDER = ["t5", "byt5", "nguni-byt5",
+               "t5-bilingual", "byt5-bilingual", "nguni-byt5-bilingual"]
 PLOTS = OUT / "plots"
 PLOTS.mkdir(exist_ok=True)
 

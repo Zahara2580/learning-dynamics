@@ -1,0 +1,27 @@
+# Bilingual-arm D2T. Derived from configs/finetune/d2t_warmup20.yaml - the
+# STANDARD D2T protocol (20% warmup), which every D2T ablation also matches.
+# Only results_dir and wandb_project differ, so the bilingual and monolingual
+# arms are directly comparable and never share a results.jsonl.
+# Full T2X train set, no subsampling.
+# D2T with 20% warmup - separate protocol from configs/finetune/d2t.yaml,
+# which has none. 20% of 4,825 steps = 965 = exactly one epoch to peak LR,
+# then linear decay. Everything else matches the paper.
+task: "d2t"
+data_dir: "data/finetune/d2t"
+
+learning_rate: 1.0e-4
+batch_size: 4
+num_epochs: 5
+lr_scheduler_type: "linear"
+warmup_ratio: 0.20
+
+eval_batch_size: 8
+max_source_length: 512
+max_target_length: 512
+num_beams: 5
+max_new_tokens: 512
+source_prefix: ""
+
+wandb_project: "cpt-bilingual-d2t"
+work_dir: "/scratch/rmdrak003/finetune_work"
+results_dir: "results_bilingual_d2t"
