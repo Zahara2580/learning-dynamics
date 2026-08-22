@@ -18,11 +18,15 @@
 # effective batch (1024), same lr/warmup/steps, same sortish sampler - so the
 # two arms differ ONLY in parameter precision.
 #
-# --model-dtype fp32 makes the trainer set bf16=False, so accelerate is told
-# --mixed_precision no to match; transformers errors on a mismatch. Without
-# autocast the activations are fp32 too, roughly doubling activation memory:
-# t5 ~18GB and byt5 ~30GB of the L40S's 48GB, so it fits. Checkpoints are
-# saved in the training dtype, so this arm archives fp32 snapshots.
+# PRECISION: parameters, gradients and optimiser state are fp32 - hardcoded
+# in continued_pretrain_lafand.py, no flag can change it. bf16 autocast
+# stays ON (activations only), which is why accelerate is told
+# --mixed_precision bf16: it must agree with the trainer or transformers
+# errors. Archived checkpoints are written fp32 so that weight movement
+# smaller than a bf16 quantum is not erased at save time.
+#
+# CORPUS: monolingual isiXhosa (data/lafand/<model>), NOT the bilingual
+# corpus. The startup banner states which one it loaded.
 #
 # Writes to a NEW run-subdir so the bf16 arm is never resumed or overwritten.
 # 48h wall clock. --resume makes this restart-safe; chain if 48h is short:
@@ -57,7 +61,7 @@ uv sync --frozen
 # --resume is always passed: harmless on first run, resumes the chain after.
 uv run accelerate launch \
     --num_processes ${SLURM_GPUS_ON_NODE:-1} \
-    --mixed_precision no \
+    --mixed_precision bf16 \
     --main_process_port $((29500 + SLURM_JOB_ID % 1000)) \
     --module src.pretraining.continued_pretrain_lafand \
     --model-config configs/models/t5.yaml \
@@ -70,6 +74,5 @@ uv run accelerate launch \
     --wandb-run-name t5-xho-lafand-bs8-fp32 \
     --metrics-filename metrics_t5_lafand_bs8_fp32.jsonl \
     --run-subdir lafand-bs8-fp32 \
-    --model-dtype fp32 \
     --sortish-sampler \
     --resume

@@ -44,6 +44,10 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# Explicit rather than relying on the HF default (also 42): the phase-1
+# logs never stated the seed, so it was not reconstructable from them.
+RANDOM_SEED = 42
+
 
 class LafandTrainer(Seq2SeqTrainer):
     """Seq2SeqTrainer with optional length-grouped batching via the
@@ -92,14 +96,17 @@ class CustomCheckpointCallback(TrainerCallback):
                 # copy, never model.to(dtype): mutating the live model would
                 # also change its optimiser state dtype mid-run.
                 #
-                # Following the param dtype matters for fp32 runs: a bf16
-                # snapshot quantises to an 8-bit mantissa, and at T5's embedding
-                # magnitude the gap between representable values is 0.0625, so
-                # genuine drift below that would be erased at save time and a
-                # correct fp32 run would still look frozen (notes/bf16_finding.md).
-                # For bf16 runs this is byte-identical to the previous behaviour.
-                save_dtype = next(model.parameters()).dtype
+                # SAVED fp32, hardcoded. A bf16 snapshot quantises to an
+                # 8-bit mantissa, and at T5's embedding magnitude the gap
+                # between representable values is 0.0625 - so any genuine drift
+                # below that is ERASED at save time, and a correctly-trained
+                # fp32 run would still look frozen on disk, indistinguishable
+                # from the phase-1 bug. Costs 2x disk; the measurement is worth
+                # more. Cast a COPY: model.to(dtype) would mutate the live model
+                # and its optimiser state mid-training.
+                save_dtype = torch.float32
                 out_state_dict = {k: v.to(save_dtype) for k, v in model.state_dict().items()}
+                assert next(iter(out_state_dict.values())).dtype == torch.float32
                 model.save_pretrained(checkpoint_path, state_dict=out_state_dict)
                 # Save the tokenizer too, so each checkpoint is a fully
                 # self-contained model dir that finetuning can point at
@@ -195,8 +202,13 @@ def parse_args() -> Namespace:
                              "checkpoints/ and resume/ dirs, for concurrent trials.")
     parser.add_argument("--wandb-run-name", type=str, default=None,
                         help="Override the wandb_run_name from the config.")
-    parser.add_argument("--model-dtype", type=str, choices=["bf16", "fp32"], default="bf16",
-                        help="Dtype to load and train the model in.")
+    parser.add_argument("--no-amp", action="store_true",
+                        help="Disable bf16 autocast. Autocast is ON by default on "
+                             "GPU: it casts ACTIVATIONS only, never the master "
+                             "weights, gradients or optimiser state, all of which "
+                             "stay fp32. There is deliberately no flag to make the "
+                             "PARAMETERS bf16 - that was the phase-1 bug "
+                             "(notes/bf16_finding.md).")
     parser.add_argument(
         "--sortish-sampler",
         action="store_true",
@@ -235,18 +247,89 @@ def main() -> None:
         f"effective batch size: {batch_size * gradient_accumulation_steps}"
     )
 
-    use_bf16 = args.model_dtype == "bf16"
+    # PARAMETERS ARE ALWAYS fp32. Not configurable.
+    #
+    # Phase 1 passed torch_dtype=torch.bfloat16 here, which made the master
+    # weights bf16. AdamW then wrote every update into an 8-bit mantissa, and
+    # at T5's embedding magnitude (|w| ~ 18) the gap between representable
+    # bf16 values is 0.125 - so an update of order lr=1e-4 rounded straight
+    # back to the original number. Measured on those checkpoints: 99.83% of
+    # t5's embeddings and 86.81% of ALL its parameters were bit-identical to
+    # the base model after 10,000 steps. See notes/bf16_finding.md.
+    #
+    # bf16 AUTOCAST is a different thing and stays on: it casts activations
+    # only. Verified - under autocast the parameter, its gradient and the
+    # AdamW state all remain fp32, so the update lands.
+    use_amp = not args.no_amp and torch.cuda.is_available()
     tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
     model = AutoModelForSeq2SeqLM.from_pretrained(
-        config.model_name_or_path,
-        torch_dtype=torch.bfloat16 if use_bf16 else torch.float32,
+        config.model_name_or_path, dtype=torch.float32,
     )
     actual_dtype = next(model.parameters()).dtype
-    logger.info(f"Requested model dtype: {args.model_dtype}, actual loaded dtype: {actual_dtype}")
-    if use_bf16 and actual_dtype != torch.bfloat16:
-        raise ValueError(f"Requested bf16 but model loaded as {actual_dtype} - dtype mismatch.")
-    if not use_bf16 and actual_dtype != torch.float32:
-        raise ValueError(f"Requested fp32 but model loaded as {actual_dtype} - dtype mismatch.")
+    if actual_dtype != torch.float32:
+        raise RuntimeError(
+            f"Model loaded as {actual_dtype}, expected torch.float32. Refusing to "
+            f"train: reduced-precision PARAMETERS silently discard optimiser "
+            f"updates (notes/bf16_finding.md).")
+
+    actual_max_steps = args.max_steps if args.max_steps is not None else config.total_steps
+    actual_warmup_steps = args.warmup_steps if args.warmup_steps is not None else config.warmup_steps
+    # ---------------------------------------------------------------- banner
+    # Everything a reader of this log needs to reconstruct the run, printed
+    # once, unmissably. Phase 1 left three questions unanswerable after the
+    # fact - what precision the parameters were, which corpus export fed the
+    # preprocessing, and what the effective batch actually was. All three are
+    # here now.
+    bar = "=" * 78
+    logger.info(bar)
+    logger.info("RUN CONFIGURATION")
+    logger.info(bar)
+    logger.info(f"  model              : {config.model_name_or_path}")
+    logger.info(f"  model config       : {args.model_config}")
+    logger.info(f"  PARAMETERS         : {actual_dtype}   "
+                f"{'OK' if actual_dtype == torch.float32 else 'WRONG - STOP'}")
+    logger.info(f"  optimiser state    : {actual_dtype} (AdamW allocates in the param dtype)")
+    logger.info(f"  gradients          : {actual_dtype}")
+    logger.info(f"  bf16 autocast      : {use_amp}  (activations only)")
+    logger.info(f"  archived ckpt dtype: torch.float32 (hardcoded)")
+    logger.info(f"  resume ckpt dtype  : {actual_dtype} (model + optimiser state, "
+                f"written by Trainer in the live param dtype)")
+    logger.info(f"  optimiser          : adamw_torch, lr {config.learning_rate}")
+    logger.info(f"  schedule           : {actual_warmup_steps} warmup / "
+                f"{actual_max_steps} total, linear")
+    logger.info(f"  effective batch    : {batch_size} x {gradient_accumulation_steps} "
+                f"= {batch_size * gradient_accumulation_steps}")
+    logger.info(f"  max_seq_length     : {config.max_seq_length}")
+    logger.info(f"  seed               : {RANDOM_SEED}")
+    logger.info(f"  sortish sampler    : {args.sortish_sampler}")
+
+    logger.info(bar)
+    logger.info("DATA")
+    logger.info(bar)
+    data_dir = Path(args.data_dir)
+    logger.info(f"  --data-dir         : {data_dir.resolve()}")
+    if "bilingual" in str(data_dir):
+        logger.info(f"  corpus             : BILINGUAL (isiXhosa + English)")
+    else:
+        logger.info(f"  corpus             : MONOLINGUAL isiXhosa")
+    # Which line-file export produced these token ids? Written by
+    # lafand_preprocess.py; absent for data preprocessed before that change,
+    # in which case say so rather than leaving it ambiguous.
+    for split in ("train", "dev"):
+        prov = data_dir / f"{split}.provenance.json"
+        if prov.exists():
+            import json as _json
+            rec = _json.loads(prov.read_text())
+            logger.info(f"  {split}.source built from: {rec.get('input_text')}")
+            logger.info(f"     {rec.get('input_lines'):,} input lines -> "
+                        f"{rec.get('output_examples'):,} segments, "
+                        f"seed {rec.get('seed')}, "
+                        f"max_line_tokens {rec.get('max_line_tokens')}")
+        else:
+            logger.info(f"  {split}.provenance.json ABSENT - the producing corpus is "
+                        f"not recorded in the data dir. Verified separately as "
+                        f"lines-passage/ (scripts/diagnostics/which_corpus_fed_cpt.py).")
+    logger.info(bar)
 
     logger.info(f"Loading lafand-preprocessed data from {args.data_dir}...")
     dataset = LafandSeq2SeqDataset(args.data_dir, type_path="train")
@@ -272,8 +355,6 @@ def main() -> None:
         f"label padding=-100 (excluded from loss)"
     )
 
-    actual_max_steps = args.max_steps if args.max_steps is not None else config.total_steps
-    actual_warmup_steps = args.warmup_steps if args.warmup_steps is not None else config.warmup_steps
 
     checkpoint_steps = compute_checkpoint_steps(actual_max_steps, CheckpointScheduleConfig())
     logger.info(f"Checkpoint schedule: {len(checkpoint_steps)} checkpoints at steps {checkpoint_steps}")
@@ -310,13 +391,15 @@ def main() -> None:
         per_device_eval_batch_size=batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         optim="adamw_torch",
+        seed=RANDOM_SEED,
+        data_seed=RANDOM_SEED,
         max_steps=actual_max_steps,
         warmup_steps=actual_warmup_steps,
         save_strategy="no" if args.no_save else "steps",
         save_steps=args.save_steps,
         save_total_limit=1,
         logging_steps=1,
-        bf16=use_bf16,
+        bf16=use_amp,          # ACTIVATIONS only; master weights stay fp32
         eval_strategy="steps",
         eval_steps=args.eval_steps,
         load_best_model_at_end=early_stopping_enabled,
