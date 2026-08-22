@@ -431,8 +431,17 @@ def run_one_checkpoint(
     # could silently have loaded another arm's identically-numbered checkpoint
     # (mt_10k and mt_xhen_10k both end at checkpoint-3125, in opposite
     # translation directions).
+    # The results_dir slug is here as well as the protocol hash because
+    # cfg.hash() deliberately EXCLUDES results_dir ("where results are written
+    # does not affect what they are"). Two configs that differ only in
+    # results_dir - d2t_bilingual vs d2t_warmup20, mt_bilingual vs mt_5epoch -
+    # therefore hash identically, and would share a work_dir that this function
+    # rmtree's on entry and exit. Adding the slug makes every (config, model)
+    # pair its own directory without disturbing config_hash, which is the
+    # protocol-drift signal recorded on every results row.
     work_dir = (Path(cfg.work_dir) /
-                f"{model_name}_{step}_{cfg.task}_{seed}_{cfg.hash()[:8]}")
+                f"{model_name}_{step}_{cfg.task}_{seed}_{cfg.hash()[:8]}"
+                f"_{Path(cfg.results_dir).name}")
     if work_dir.exists():
         # Leftovers from a job killed mid-run; the results row was never
         # written, so this run is redone from scratch.

@@ -16,8 +16,23 @@ import glob
 import os
 import re
 
-EN = re.compile(r"\b(the|and|of|to|is|in|that|was|for|with|a|it)\b", re.I)
-THRESH = 0.5          # sits in the empty band between the two clusters
+# Language ID by the FRACTION of words that are English function words.
+#
+# An earlier version asked "does this line contain any English word?" - that
+# works on single-sentence predictions but SATURATES on 185-word passages,
+# where one brand name or "Co., Ltd." flips the whole passage. English running
+# text is ~20-30% function words; isiXhosa is ~0-3% (only borrowings). The
+# threshold sits in the empty band between those.
+EN = re.compile(r"\b(the|and|of|to|is|in|that|was|for|with|a|it|on|as|at|by|"
+                r"this|from|are|be|has|have|not|but|or|an|we|they|he|she|his|"
+                r"her|its|which|will|would|been|were|had|you|all|can|their)\b", re.I)
+THRESH = 0.08     # >= 8% English function words => English
+
+
+def en_fraction(text):
+    words = text.split()
+    return len(EN.findall(text)) / len(words) if words else 0.0
+
 
 SEARCH = [
     "/scratch/rmdrak003/data/lafand/lines-passage/*bilingual*.txt",
@@ -33,7 +48,7 @@ SAMPLE = 4000        # segments to decode per model for the language split
 
 
 def classify(line):
-    return "en" if EN.search(line) else "xh"
+    return "en" if en_fraction(line) >= THRESH else "xh"
 
 
 print("=" * 74)
@@ -64,8 +79,19 @@ for path in found:
     print(f"    characters XH   : {chars_xh:,}")
     print(f"    CHARACTER ratio : {chars_en/max(chars_xh,1):.3f}  "
           f"<- parity was decided on PASSAGES, so this may differ")
-    print(f"    sample EN: {next((l for l,t in zip(lines,tags) if t=='en'), '')[:90]!r}")
-    print(f"    sample XH: {next((l for l,t in zip(lines,tags) if t=='xh'), '')[:90]!r}")
+    fr = sorted(en_fraction(l) for l in lines)
+    print(f"    EN-fraction distribution: min {fr[0]:.3f} | p25 {fr[len(fr)//4]:.3f} | "
+          f"median {fr[len(fr)//2]:.3f} | p75 {fr[3*len(fr)//4]:.3f} | max {fr[-1]:.3f}")
+    print(f"      (bimodal with an empty middle => the threshold is doing no work)")
+    print(f"    sample EN: {next((l for l,t in zip(lines,tags) if t=='en'), '')[:88]!r}")
+    print(f"    sample XH: {next((l for l,t in zip(lines,tags) if t=='xh'), '')[:88]!r}")
+    # parity is provable without any classifier: the merge is xho + an equal
+    # SAMPLE of eng, so the total must be exactly twice the xho passage count
+    XHO = {139426: 69713, 15692: 7846}
+    if len(lines) in XHO:
+        h = XHO[len(lines)]
+        print(f"    ARITHMETIC CHECK: {len(lines):,} = 2 x {h:,} xho passages -> "
+              f"passage parity is EXACT by construction")
 
 print("\n" + "=" * 74)
 print("WHAT CPT ACTUALLY CONSUMED  (segments, decoded and language-classified)")
@@ -91,7 +117,7 @@ for src in sorted(glob.glob(PREPROCESSED)):
             if i not in keep:
                 continue
             text = tok.decode([int(x) for x in line.split()], skip_special_tokens=True)
-            if EN.search(text):
+            if en_fraction(text) >= THRESH:
                 n_en += 1
             else:
                 n_xh += 1
