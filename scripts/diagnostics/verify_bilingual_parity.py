@@ -20,13 +20,16 @@ EN = re.compile(r"\b(the|and|of|to|is|in|that|was|for|with|a|it)\b", re.I)
 THRESH = 0.5          # sits in the empty band between the two clusters
 
 SEARCH = [
-    "/scratch/rmdrak003/data/lafand-bilingual/lines*/*.txt",
-    "/scratch/rmdrak003/data/lafand-bilingual/lines*/*.xh",
-    "/scratch/rmdrak003/data/lafand-bilingual/*.txt",
-    "/scratch/rmdrak003/data/lafand/lines*bilingual*/*",
+    "/scratch/rmdrak003/data/lafand/lines-passage/*bilingual*.txt",
+    "/scratch/rmdrak003/data/lafand-bilingual/lines*/*",
     "/scratch/rmdrak003/data/lafand/*bilingual*.txt",
 ]
 PREPROCESSED = "/scratch/rmdrak003/data/lafand-bilingual/*/train.source"
+# monolingual segment counts, for the "how much did adding English add?" ratio
+MONO = {"t5": 161_722, "byt5": 250_840, "nguni-byt5": 250_840}
+TOKENIZERS = {"t5": "google-t5/t5-large", "byt5": "google/byt5-large",
+              "nguni-byt5": "google/byt5-large"}
+SAMPLE = 4000        # segments to decode per model for the language split
 
 
 def classify(line):
@@ -65,10 +68,42 @@ for path in found:
     print(f"    sample XH: {next((l for l,t in zip(lines,tags) if t=='xh'), '')[:90]!r}")
 
 print("\n" + "=" * 74)
-print("PREPROCESSED BILINGUAL DATA (what CPT actually consumed)")
+print("WHAT CPT ACTUALLY CONSUMED  (segments, decoded and language-classified)")
 print("=" * 74)
+print("  Passage parity does NOT imply segment parity: a tokenizer that")
+print("  compresses English better than isiXhosa turns an equal number of")
+print("  passages into unequal numbers of 512-token segments.\n")
+
+import random
+
+from transformers import AutoTokenizer
+
 for src in sorted(glob.glob(PREPROCESSED)):
-    n = sum(1 for _ in open(src))
+    model = os.path.basename(os.path.dirname(src))
+    total = sum(1 for _ in open(src))
+    tok = AutoTokenizer.from_pretrained(TOKENIZERS.get(model, "google/byt5-large"))
+
+    random.seed(0)
+    keep = set(random.sample(range(total), min(SAMPLE, total)))
+    n_en = n_xh = 0
+    with open(src) as f:
+        for i, line in enumerate(f):
+            if i not in keep:
+                continue
+            text = tok.decode([int(x) for x in line.split()], skip_special_tokens=True)
+            if EN.search(text):
+                n_en += 1
+            else:
+                n_xh += 1
+    n = n_en + n_xh
+    mono = MONO.get(model)
+    print(f"  {model}")
+    print(f"    total segments      : {total:,}"
+          + (f"   (monolingual arm: {mono:,}, x{total/mono:.2f})" if mono else ""))
+    print(f"    sampled             : {n:,}")
+    print(f"    English segments    : {n_en/n:>6.1%}")
+    print(f"    isiXhosa segments   : {n_xh/n:>6.1%}")
+    print(f"    ratio EN:XH         : {n_en/max(n_xh,1):.3f}   (1.000 = equal exposure)")
     prov = os.path.join(os.path.dirname(src), "train.provenance.json")
-    print(f"  {src}: {n:,} segments"
-          f"{'   [provenance present]' if os.path.exists(prov) else '   [no provenance]'}")
+    if not os.path.exists(prov):
+        print(f"    [no provenance file - predates the provenance change]")
