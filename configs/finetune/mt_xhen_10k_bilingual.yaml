@@ -1,0 +1,30 @@
+# Bilingual-arm MT ablation, REVERSE (xh->en), 10,000 pairs.
+# Derived from configs/finetune/mt_xhen_10k.yaml with ONLY results_dir and
+# wandb_project changed, so the protocol hash is identical to the
+# monolingual arm and the two are directly comparable.
+# MT xh->en, 5 epochs. Same top-50k WMT22 pairs as en->xh (selection is
+# direction-agnostic), orientation swapped; FLORES sides swapped to match.
+task: "mt"
+data_dir: "data/finetune/mt"
+
+learning_rate: 1.0e-5
+batch_size: 4
+gradient_accumulation_steps: 4
+num_epochs: 5
+lr_scheduler_type: "linear"
+warmup_steps: 0
+
+eval_batch_size: 8
+max_source_length: 512
+max_target_length: 512
+num_beams: 5
+max_new_tokens: 512
+
+source_prefix: ""
+direction: "xh-en"
+direction_prefix: "Translate Xhosa to English: "
+n_train_pairs: 10000
+
+wandb_project: "cpt-bilingual-mt-xhen-10k"
+work_dir: "/scratch/rmdrak003/finetune_work"
+results_dir: "results_bilingual_mt_xhen_10k"
