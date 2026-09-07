@@ -1,0 +1,27 @@
+# PHASE-2 (bilingual isiXhosa+English) counterpart of d2t_1000.yaml.
+# ONLY results_dir and wandb_project differ, so the protocol hash is
+# identical (649b6fe995e0) and the two arms are directly comparable.
+#
+# The 1,000 training examples are the SAME 1,000 the monolingual arm used:
+# the subsample is drawn by random.Random(42) inside run_finetune from the
+# same 3,859-line train split, independent of model, arm and --seed.
+task: "d2t"
+data_dir: "data/finetune/d2t"
+
+learning_rate: 1.0e-4
+batch_size: 4
+num_epochs: 5
+lr_scheduler_type: "linear"
+warmup_ratio: 0.20
+
+eval_batch_size: 8
+max_source_length: 512
+max_target_length: 512
+num_beams: 5
+max_new_tokens: 512
+source_prefix: ""
+
+wandb_project: "cpt-bilingual-d2t-1000"
+work_dir: "/scratch/rmdrak003/finetune_work"
+results_dir: "results_bilingual_d2t_1000"
+n_train_examples: 1000
