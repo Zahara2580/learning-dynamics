@@ -30,11 +30,13 @@ MODEL=byt5
 CONFIG=configs/finetune/d2t_1000.yaml
 STEPS="0 5000 10000"
 SEEDS=${SEEDS:-"42 123 456"}
+FIRST=1
 ARM=d2t_1000
 
-# Phase-1 (monolingual isiXhosa) checkpoints, pinned: auto-discovery is
-# ambiguous now that lafand-bilingual/ sits alongside them.
-CKPTS=/scratch/rmdrak003/results/byt5/lafand-bs4/checkpoints
+# Phase-1 (monolingual isiXhosa) checkpoints were DELETED from /scratch, so
+# they are restored from their HuggingFace backup below before training.
+# This directory is created by fetch_checkpoints.py, not by the CPT run.
+CKPTS=/scratch/rmdrak003/hf_ckpts/byt5
 
 git pull
 git log -1
@@ -75,18 +77,52 @@ echo "=========================================================="
 # first run, then verifies and ABORTS on any drift.
 uv run python3 -m scripts.seed_experiment.verify_subset --write
 
-for SEED in ${SEEDS}; do
-    OUT="seed_experiment/${ARM}_seed${SEED}"
+for STEP in 5000 10000; do
     echo ""
-    echo "--- seed ${SEED} -> ${OUT} ---"
-    uv run python3 -m src.finetuning.run_finetune \
-        --config "${CONFIG}" \
-        --model "${MODEL}" \
-        --checkpoints-dir "${CKPTS}" \
-        --steps ${STEPS} \
-        --seed "${SEED}" \
-        --results-dir "${OUT}" \
-        ${WANDB_FLAG}
+    echo "=== fetching checkpoint-${STEP} ==="
+    uv run python3 -m scripts.seed_experiment.fetch_checkpoints \
+        --model "${MODEL}" --steps "${STEP}" --dest "${CKPTS}"
+    du -sh "${CKPTS}"
+
+    # Step 0 is the un-adapted base model and needs no checkpoint of its own,
+    # but run_finetune discovers checkpoints before filtering by --steps and
+    # refuses an empty directory. So it rides along with the first fetch.
+    if [ "${FIRST}" -eq 1 ]; then
+        for SEED in ${SEEDS}; do
+            OUT="seed_experiment/${ARM}_seed${SEED}"
+            echo "--- step 0, seed ${SEED} -> ${OUT} ---"
+            uv run python3 -m src.finetuning.run_finetune \
+                --config "${CONFIG}" \
+                --model "${MODEL}" \
+                --checkpoints-dir "${CKPTS}" \
+                --steps 0 \
+                --seed "${SEED}" \
+                --results-dir "${OUT}" \
+                ${WANDB_FLAG}
+        done
+        FIRST=0
+    fi
+
+    for SEED in ${SEEDS}; do
+        OUT="seed_experiment/${ARM}_seed${SEED}"
+        echo "--- step ${STEP}, seed ${SEED} -> ${OUT} ---"
+        uv run python3 -m src.finetuning.run_finetune \
+            --config "${CONFIG}" \
+            --model "${MODEL}" \
+            --checkpoints-dir "${CKPTS}" \
+            --steps "${STEP}" \
+            --seed "${SEED}" \
+            --results-dir "${OUT}" \
+            ${WANDB_FLAG}
+    done
+
+    # Delete the source weights the moment every seed that needs them is done.
+    # Scratch cannot hold both checkpoints at once, so this is required, not
+    # tidiness. Cost of the trade: checkpoint-5000 and -10000 are each
+    # downloaded once, and re-downloaded if the job is resubmitted.
+    rm -rf "${CKPTS}/checkpoint-${STEP}"
+    echo "=== deleted checkpoint-${STEP} ==="
+    du -sh "${CKPTS}" 2>/dev/null || echo "  (checkpoint dir now empty)"
 done
 
 echo "=== end $(date -Is) ==="
