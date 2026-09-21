@@ -1,4 +1,4 @@
-"""Configuration for pretraining a single model."""
+"""Load and validate model settings for continued pretraining"""
 
 import logging
 from dataclasses import dataclass
@@ -12,26 +12,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ModelConfig:
-    """
-    Configuration for continued pretraining a single model.
-
-    Attributes:
-        model_name_or_path: HuggingFace model identifier or local path.
-        max_seq_length: Fixed chunk length used for preprocessing and
-            training (this is the block size preprocess.py chunks to).
-        learning_rate: Pretraining learning rate.
-        per_device_batch_size: Per-device batch size.
-        gradient_accumulation_steps: Number of steps to accumulate
-            gradients over before updating weights.
-        total_steps: Total number of training steps.
-        warmup_steps: Number of linear warmup steps.
-        output_dir: Directory to save checkpoints to.
-        wandb_project: Weights & Biases project name to log to.
-        wandb_run_name: Weights & Biases run name.
-        max_target_length: Maximum target sequence length for the
-            lafand-style pipeline's collator (targets are variable
-            length; longer ones are truncated to this).
-    """
+    """Store and validate model settings for continued pretraining"""
     model_name_or_path: str
     max_seq_length: int
     learning_rate: float
@@ -45,7 +26,7 @@ class ModelConfig:
     max_target_length: int = 512
 
     def __post_init__(self) -> None:
-        """Validate configuration values after construction."""
+        """Validate configuration values after construction"""
         if self.max_seq_length <= 0:
             raise ValueError(f"max_seq_length must be positive, got {self.max_seq_length}")
         if self.learning_rate <= 0:
@@ -65,15 +46,7 @@ class ModelConfig:
 
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "ModelConfig":
-        """
-        Load a ModelConfig from a YAML file.
-
-        Unknown keys are ignored but warned about: a silently dropped key
-        looks like a setting that is in force when it is not.
-
-        :param path: Path to the YAML config file.
-        :return: Populated ModelConfig instance.
-        """
+        """Load model settings from YAML """
         with open(path) as f:
             data = yaml.safe_load(f)
 

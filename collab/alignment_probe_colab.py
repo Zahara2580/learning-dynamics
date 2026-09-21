@@ -1,7 +1,7 @@
 """
 Cross-lingual alignment probing on Google Colab.
 
-Same measurement as scripts/diagnostics/crosslingual_alignment.py and
+Same measurement as src/diagnostics/crosslingual_alignment.py and
 layerwise_alignment.py, but pulling checkpoints from the HF backup repos
 instead of scratch, so it runs without the HPC.
 
@@ -73,7 +73,7 @@ if DEVICE == "cuda":
 
 # %% CELL 4 - load FLORES-200 devtest (1,012 aligned pairs)
 #
-# Same call as src/data_processing/download_finetune_data.py on the HPC, so
+# Match the FLORES dataset used for fine-tuning on the HPC, so
 # the sentences are identical. Needs datasets<4 from CELL 1 (and a restart).
 from datasets import load_dataset
 

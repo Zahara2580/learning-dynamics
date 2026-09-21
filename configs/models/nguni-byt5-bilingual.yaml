@@ -1,8 +1,4 @@
-# Phase-2 (bilingual isiXhosa+English) identity for nguni-byt5.
-# Identical CPT hyperparameters to configs/models/nguni-byt5.yaml - this file
-# exists so finetuning can be launched with --model nguni-byt5-bilingual, which
-# makes the arm self-identifying in results.jsonl and in prediction
-# filenames. Without it both arms would write rows saying model=nguni-byt5.
+
 # Model Configuration
 model_name_or_path: "francois-meyer/nguni-byt5-large"
 max_seq_length: 512

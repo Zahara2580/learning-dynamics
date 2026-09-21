@@ -1,0 +1,73 @@
+#!/bin/bash
+#SBATCH --account=l40sfree
+#SBATCH --partition=l40s
+#SBATCH --nodes=1 --ntasks=1 --gres=gpu:l40s:1
+#SBATCH --mem=64G
+#SBATCH --time=48:00:00
+#SBATCH --job-name="ft-mt-nguni-byt5"
+#SBATCH --mail-user=rmdrak003@myuct.ac.za
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --output=logs/finetune_%x_%j.log
+#SBATCH --error=logs/finetune_%x_%j.log
+
+MODEL=nguni-byt5
+TASK=mt
+
+git pull
+git log -1
+
+CHAIN_JOBS=${CHAIN_JOBS:-0}
+if [ "${CHAIN_JOBS}" -gt 0 ]; then
+    echo "Queuing next chained job (remaining after this: $((CHAIN_JOBS - 1)))"
+    sbatch --dependency=afterany:${SLURM_JOB_ID} \
+        --export=ALL,CHAIN_JOBS=$((CHAIN_JOBS - 1)) \
+        "$0"
+fi
+
+export UV_LINK_MODE=copy
+
+set -a
+source /scratch/rmdrak003/learning-dynamics/.env
+set +a
+
+export HF_HOME=/scratch/rmdrak003/hf
+export HF_DATASETS_CACHE=${HF_HOME}/datasets
+mkdir -p "${HF_HOME}"
+
+export WANDB_DIR=/scratch/rmdrak003/learning-dynamics
+export WANDB_CACHE_DIR=/scratch/rmdrak003/wandb-cache
+
+WANDB_FLAG=""
+if [ "${WANDB:-1}" -eq 1 ]; then
+    WANDB_FLAG="--wandb"
+fi
+
+module load python/miniconda3-py3.12
+cd /scratch/rmdrak003/learning-dynamics
+uv sync --frozen
+
+set -e
+
+
+echo "finetune ${MODEL} on ${TASK} start $(date -Is)"
+
+uv run python3 -m src.finetuning.run_finetune \
+    --config configs/finetune/${TASK}.yaml \
+    --model "${MODEL}" \
+    --seed 42 \
+    ${WANDB_FLAG}
+
+echo "=== end $(date -Is) ==="
+
+echo "Per-checkpoint runtimes recorded so far:"
+uv run python3 -c "
+import json, pathlib
+p = pathlib.Path('results/finetune/results.jsonl')
+if p.exists():
+    for line in p.read_text().splitlines():
+        if not line.strip(): continue
+        r = json.loads(line)
+        if r['model'] == '${MODEL}' and r['task'] == '${TASK}':
+            print(f\"  step {r['ckpt_step']:>6}  {r['total_runtime_s']:>8.0f}s  \"
+                  f\"BLEU {r['metrics']['bleu']:6.2f}  chrF {r['metrics']['chrf']:6.2f}\")
+"

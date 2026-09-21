@@ -1,12 +1,4 @@
-"""
-Configuration for downstream finetuning of a single CPT checkpoint.
-
-A run is fully specified by (config, model_name, checkpoint_path, seed).
-Everything in this dataclass is held CONSTANT across every checkpoint of
-every model - the finetuning protocol is the measurement instrument, so
-varying it would confound the learning-dynamics signal we are measuring.
-Hyperparameters come from Meyer et al. (2024) / NGLUEni and are not tuned.
-"""
+"""Load and validate fine-tuning settings."""
 
 import hashlib
 import json
@@ -22,52 +14,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FinetuneConfig:
-    """
-    Configuration for finetuning one checkpoint on one downstream task.
-
-    Attributes:
-        task: Task identifier, "d2t" (data-to-text, T2X dataset) or "mt".
-        data_dir: Directory holding the task's data files.
-        learning_rate: Finetuning learning rate (locked per task).
-        batch_size: Per-device micro-batch. With
-            gradient_accumulation_steps this multiplies to the paper's
-            batch size; split purely to fit memory.
-        gradient_accumulation_steps: Micro-batches per optimiser step.
-        num_epochs: Fixed number of training epochs (locked per task).
-        lr_scheduler_type: "constant" for T2X (no warmup, no decay) or
-            "linear" for MT (linear decay, no warmup), per the paper.
-        warmup_steps: Absolute warmup steps. Leave 0 and use
-            warmup_ratio instead, which adapts to each task's step count.
-        warmup_ratio: Fraction of total steps spent warming up to the
-            peak LR. 0.0 reproduces the paper (no warmup).
-        eval_batch_size: Batch size for validation loss and generation.
-            Affects throughput only, not results.
-        max_source_length: Source truncation length. Byte-level models
-            (ByT5) need far more positions than subword models for the
-            same text, so this is set generously enough to never truncate
-            either family on these datasets.
-        max_target_length: Target truncation length during training.
-        num_beams: Beam count for generation. FROZEN across checkpoints.
-        max_new_tokens: Generation cap. FROZEN across checkpoints. ByT5
-            emits BYTES, and isiXhosa is agglutinative with long words,
-            so an undersized cap silently truncates output and destroys
-            chrF without raising anything.
-        source_prefix: Task prefix prepended to every source string.
-            Identical for all checkpoints. "" unless the supervisor
-            specifies one.
-        direction_prefix: MT-only direction tag, e.g.
-            "Translate English to Xhosa: ". Ignored for T2X.
-        n_train_pairs: MT only: number of WMT22 pairs used for training,
-            selected by the dedupe-then-top-N-by-laser_score rule in
-            load_mt_train. 0 = unused (t2x).
-        direction: MT only: "en-xh" (default) or "xh-en". Orients both
-            the training pairs and the FLORES evaluation pairs.
-        wandb_project: W&B project for the --wandb curves. Infra, not
-            protocol (excluded from the hash).
-        work_dir: Scratch directory for transient finetuned weights.
-            Everything under here is deleted after scoring.
-        results_dir: Permanent directory for results.jsonl + predictions.
-    """
+    """Store and validate settings for one fine-tuning task."""
     task: str
     data_dir: str
     learning_rate: float
@@ -92,7 +39,7 @@ class FinetuneConfig:
     results_dir: str = "results/finetune"
 
     def __post_init__(self) -> None:
-        """Validate configuration values after construction."""
+        """Validate the task and training settings."""
         if self.task not in {"d2t", "mt"}:
             raise ValueError(f"task must be 'd2t' or 'mt', got {self.task!r}")
         if self.learning_rate <= 0:
@@ -133,20 +80,12 @@ class FinetuneConfig:
 
     @property
     def effective_batch_size(self) -> int:
-        """Examples per optimiser step - the number the paper specifies."""
+        """Return the number of examples per optimizer step."""
         return self.batch_size * self.gradient_accumulation_steps
 
     @classmethod
-    def from_yaml(cls, path: Union[str, Path]) -> "FinetuneConfig":
-        """
-        Load a FinetuneConfig from a YAML file.
-
-        Unknown keys are ignored, mirroring ModelConfig.from_yaml, so a
-        single YAML can carry annotations this class does not consume.
-
-        :param path: Path to the YAML config file.
-        :return: Populated FinetuneConfig instance.
-        """
+    def from_yaml(cls, path: Union[str, Path]) -> 'FinetuneConfig':
+        """Load settings from YAML and warn about unknown keys."""
         with open(path) as f:
             data = yaml.safe_load(f)
 
@@ -158,30 +97,16 @@ class FinetuneConfig:
         return cls(**filtered)
 
     def hash(self) -> str:
-        """
-        Stable short hash of the protocol-defining fields.
-
-        Recorded on every results row so that rows produced under a
-        changed protocol are detectable after the fact. Path fields are
-        excluded: where results are written does not affect what they are.
-
-        :return: First 12 hex chars of the sha256 of the config.
-        """
+        """Return a stable hash of the experimental settings"""
         payload = {
             k: v for k, v in asdict(self).items()
             if k not in {"work_dir", "results_dir", "data_dir", "eval_batch_size",
                          "wandb_project",
-                         # split of the effective batch is a memory choice, not
-                         # protocol: 4x4 and 16x1 optimise identically, so the
-                         # product is hashed instead (below).
                          "batch_size", "gradient_accumulation_steps"}
         }
         if payload.get("direction") == "en-xh":
-            # historical default: omitted so rows written before the field
-            # existed keep their hash; xh-en stays in and changes it.
             payload.pop("direction")
         if not payload.get("n_train_examples"):
-            # same rule: unset (full data) keeps pre-existing hashes intact
             payload.pop("n_train_examples", None)
         payload["effective_batch_size"] = self.effective_batch_size
         blob = json.dumps(payload, sort_keys=True)

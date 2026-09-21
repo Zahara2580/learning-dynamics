@@ -1,8 +1,4 @@
-# Phase-2 (bilingual isiXhosa+English) identity for t5.
-# Identical CPT hyperparameters to configs/models/t5.yaml - this file
-# exists so finetuning can be launched with --model t5-bilingual, which
-# makes the arm self-identifying in results.jsonl and in prediction
-# filenames. Without it both arms would write rows saying model=t5.
+
 # Model Configuration
 model_name_or_path: "google-t5/t5-large"
 max_seq_length: 512

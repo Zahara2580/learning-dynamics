@@ -5,7 +5,7 @@ Standalone - does not depend on the probing notebook. Paste each
 "# %% CELL n" block into its own Colab cell, in order.
 
 WHY THIS EXISTS
-    src/pretraining/continued_pretrain_lafand.py:234 loads the model with
+    src/pretraining/continued_pretrain.py:234 loads the model with
     torch_dtype=torch.bfloat16, so AdamW wrote its updates into bf16
     parameters with no fp32 master copy. bf16 keeps 8 mantissa bits, so the
     gap between representable values scales with magnitude:
@@ -192,7 +192,7 @@ READING THE TABLE
   therefore the resolution bf16 had available to record the update.
 
 THE FIX, for any re-run
-  continued_pretrain_lafand.py already accepts --model-dtype fp32. Passing it
+  continued_pretrain.py already accepts --model-dtype fp32. Passing it
   keeps parameters in fp32 while bf16=True still autocasts activations - real
   mixed precision. Costs roughly double the optimiser memory, so the batch
   size or gradient accumulation may need adjusting.

@@ -1,29 +1,10 @@
-"""
-Corpus scoring with sacreBLEU, handling ragged multi-reference sets.
-
-sacreBLEU groups references BY REFERENCE INDEX, not by sentence:
-refs_t[k][j] is the k-th reference of sentence j, None-padded where a
-sentence has fewer than k+1 references. Passing the natural per-sentence
-nesting instead returns plausible but wrong numbers with no error. The
-recorded signature reports 'nrefs:var' when the ragged padding was read
-correctly.
-
-Predictions and references are passed as raw strings - sacreBLEU
-tokenises internally, so any preprocessing here would break
-comparability with published baselines.
-"""
+"""Score generated text against single or multiple references."""
 
 from sacrebleu.metrics import BLEU, CHRF, TER
 
 
 def transpose_references(references: list[list[str]]) -> list[list[str | None]]:
-    """
-    Transpose per-sentence reference lists into sacreBLEU's layout.
-
-    :param references: references[j] = list of refs for sentence j.
-    :return: refs_t[k][j] = k-th ref of sentence j, None-padded where
-        sentence j has fewer than k+1 references.
-    """
+    """Group references by reference index, padding missing alternatives with None."""
     max_refs = max(len(r) for r in references)
     return [
         [r[k] if k < len(r) else None for r in references] for k in range(max_refs)
@@ -31,23 +12,10 @@ def transpose_references(references: list[list[str]]) -> list[list[str | None]]:
 
 
 def prediction_diagnostics(preds: list[str], references: list[list[str]]) -> dict:
-    """
-    Cheap degenerate-output detectors.
-
-    A checkpoint early in CPT can emit empty strings or repeat a single
-    token forever. Such output can still post a non-trivial chrF, so
-    without these counters a broken point on the learning-dynamics curve
-    looks merely low rather than degenerate.
-
-    :param preds: Generated strings.
-    :param references: Reference lists, used only for a length baseline.
-    :return: Diagnostic counters and length statistics.
-    """
+    """Summarize empty outputs, repetition and prediction lengths."""
     n = len(preds)
     n_empty = sum(1 for p in preds if not p.strip())
 
-    # Crude repetition detector: fraction of predictions where a single
-    # whitespace token accounts for over half the tokens produced.
     n_repetitive = 0
     for p in preds:
         tokens = p.split()
@@ -67,25 +35,12 @@ def prediction_diagnostics(preds: list[str], references: list[list[str]]) -> dic
         "n_repetitive": n_repetitive,
         "mean_pred_chars": round(mean_pred_chars, 2),
         "mean_ref_chars": round(mean_ref_chars, 2),
-        # Ratio far from 1.0 means systematic over/under-generation,
-        # which is the signature of a truncating max_new_tokens.
         "pred_ref_len_ratio": round(mean_pred_chars / mean_ref_chars, 3) if mean_ref_chars else 0.0,
     }
 
 
 def score_corpus(preds: list[str], references: list[list[str]]) -> dict:
-    """
-    Score predictions against ragged multi-reference sets.
-
-    Uses sacreBLEU's class-based API rather than the corpus_bleu()
-    convenience functions. The scores are identical; the difference is
-    that only the metric objects expose get_signature(), so the
-    functional API would force us to record empty signature strings.
-
-    :param preds: Generated strings, one per sentence.
-    :param references: references[j] = list of refs for sentence j.
-    :return: Scores, signature strings, and degenerate-output counters.
-    """
+    """Compute corpus metrics and signatures using all available references."""
     assert len(preds) == len(references), (
         f"{len(preds)} predictions vs {len(references)} reference sets"
     )

@@ -9,22 +9,27 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# OS junk
+
 .DS_Store
 
-# Data & model artifacts (these belong in $SCRATCH on the HPC, not git)
+
 /data/
 checkpoints/
 *.bin
 *.safetensors
 wandb/
 
-# Working notes: progress tracking, drafts, reference papers. Never committed.
+
 /notes/
 
-# Results and figures (live on the HPC / laptop, not in git)
+
 /results/
 /results_*/
 /logs/
 *.png
 *.jsonl
+
+/.vscode
+/ablation_results
+/bilingual_results
+/new_probes
